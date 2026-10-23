@@ -8,16 +8,16 @@ class EscrowFOVScene extends Phaser.Scene {
     this.maxSpeed = 85;
     this.distance = 0; // 0 to 5000 (5.0 miles)
     this.targetDistance = 5000;
-    this.playerX = 0; // -1 (Left Lane), 0 (Center), 1 (Right Lane)
-    this.steerVelocity = 0;
+    this.playerX = 0;
     this.engineRunning = true;
     this.truckColor = 0x6366f1;
 
-    // Traffic Jam & Milestone states
     this.inTrafficJam = false;
     this.trafficCleared = false;
     this.trafficTimer = 8;
     this.escrowCollected = false;
+    this.waivedInspectionTrap = false;
+    this.trapTriggered = false;
     this.finished = false;
     this.roadZ = 0;
     this.obstacles = [];
@@ -25,55 +25,47 @@ class EscrowFOVScene extends Phaser.Scene {
   }
 
   create() {
-    const { width, height } = this.scale;
-    this.horizonY = 125;
+    const { width } = this.scale;
+    this.horizonY = 120;
 
-    // 1. Cyber-Sunset Sky Gradient & Sun
+    // 1. Sunset Sky Gradient
     const sky = this.add.graphics();
-    sky.fillGradientStyle(0x090d16, 0x090d16, 0x311042, 0x7c2d12, 1);
+    sky.fillGradientStyle(0x090d16, 0x090d16, 0x1e1b4b, 0x7c2d12, 1);
     sky.fillRect(0, 0, width, this.horizonY);
 
-    // Retro Glowing Sun on Horizon
-    this.sun = this.add.circle(width / 2, this.horizonY - 18, 42, 0xf59e0b, 0.85);
-    this.add.circle(width / 2, this.horizonY - 18, 54, 0xf97316, 0.25);
-
-    // City Skyline Silhouette
+    // Horizon Sun & Skyline
+    this.add.circle(width / 2, this.horizonY - 16, 40, 0xf59e0b, 0.8);
     const skyline = this.add.graphics();
     skyline.fillStyle(0x0f172a, 1);
-    const buildings = [
-      [40, 35, 30], [75, 50, 25], [120, 28, 40], [280, 45, 30],
-      [360, 65, 45], [410, 40, 30], [490, 55, 35], [640, 45, 40], [710, 30, 50]
-    ];
-    buildings.forEach(([bx, bh, bw]) => {
+    [[50, 35, 30], [90, 50, 28], [260, 42, 35], [370, 60, 45], [480, 48, 35], [650, 40, 45]].forEach(([bx, bh, bw]) => {
       skyline.fillRect(bx, this.horizonY - bh, bw, bh);
     });
 
-    // Dynamic Graphics Layer for 3D Road, Scenery, and Obstacles
     this.worldGfx = this.add.graphics();
 
-    // Overlay Text Container for 3D Floating Signs
+    // Label pool for 3D Highway Signs
     this.labelPool = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 12; i++) {
       const lbl = this.add.text(0, 0, '', {
         fontSize: '12px',
         fontStyle: 'bold',
-        color: '#ffffff',
-        backgroundColor: '#0f172ae6',
-        padding: { x: 6, y: 3 }
+        color: '#f8fafc',
+        backgroundColor: '#1e293bf2',
+        padding: { x: 7, y: 4 }
       }).setOrigin(0.5, 1).setVisible(false).setDepth(20);
       this.labelPool.push(lbl);
     }
 
-    // Floating Pop-up Feedback Text (e.g., "+$1,500 SELLER CREDIT!")
-    this.floatingPopup = this.add.text(width / 2, 190, '', {
-      fontSize: '18px',
+    // Center Screen Consequence Popup (Only shown AFTER player makes a choice!)
+    this.floatingPopup = this.add.text(width / 2, 195, '', {
+      fontSize: '17px',
       fontStyle: '900',
-      color: '#34d399',
+      color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 5
     }).setOrigin(0.5).setDepth(40).setAlpha(0);
 
-    // Keyboard Controls
+    // Keyboard Input
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys({
       W: Phaser.Input.Keyboard.KeyCodes.W,
@@ -83,21 +75,16 @@ class EscrowFOVScene extends Phaser.Scene {
       SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE
     });
 
-    // Spacebar to toggle Engine On/Off
-    this.keys.SPACE.on('down', () => {
-      this.toggleEngine();
-    });
+    this.keys.SPACE.on('down', () => this.toggleEngine());
 
-    // Spawn Highway Obstacles & Milestones along the 5,000m route
-    this.setupHighwayEvents();
+    this.setupNeutralHighwayChoices();
 
-    // Spawn Roadside Scenery (Trees / Streetlights)
-    for (let z = 100; z < 2000; z += 160) {
-      this.scenery.push({ z, side: -1.6 });
-      this.scenery.push({ z: z + 80, side: 1.6 });
+    for (let z = 80; z < 1800; z += 150) {
+      this.scenery.push({ z, side: -1.55 });
+      this.scenery.push({ z: z + 75, side: 1.55 });
     }
 
-    // 1-Second Timer for Underwriting Traffic Jam Fee Burn
+    // 1-Second Timer for Underwriting Delay
     this.time.addEvent({
       delay: 1000,
       loop: true,
@@ -109,16 +96,15 @@ class EscrowFOVScene extends Phaser.Scene {
             this.onTrafficTick(this.trafficTimer, burn, this.engineRunning);
           }
           if (burn > 0) {
-            this.showPopup('-$150 IDLING RATE-LOCK FEE! (CUT ENGINE!)', '#f87171');
+            this.showPopup('-$150 RATE LOCK EXTENSION FEE! (IDLING)', '#f87171');
           } else {
-            this.showPopup('❄️ ENGINE OFF: $0 FEE BLEED!', '#38bdf8');
+            this.showPopup('ENGINE OFF: RATE LOCK PROTECTED ($0 LOSS)', '#38bdf8');
           }
 
           if (this.trafficTimer <= 0) {
             this.trafficCleared = true;
             this.inTrafficJam = false;
-            this.showPopup('🟢 UNDERWRITING CLEARED! START ENGINE & DRIVE!', '#34d399');
-            // Remove traffic barrier cars
+            this.showPopup('UNDERWRITING CLEARED! RESTART ENGINE [SPACE]!', '#34d399');
             this.obstacles = this.obstacles.filter(o => o.type !== 'traffic_wall');
             if (this.onTrafficCleared) this.onTrafficCleared();
           }
@@ -127,42 +113,101 @@ class EscrowFOVScene extends Phaser.Scene {
     });
   }
 
-  setupHighwayEvents() {
+  // All signs use neutral text with NO dollar amounts or green/red color spoilers
+  setupNeutralHighwayChoices() {
     this.obstacles = [
-      // Mile 0.5: Inspection Roof Defect vs Seller Credit
-      { z: 550, lane: -0.75, type: 'defect', title: '🕳️ LEAKY ROOF (-$1,400)', cost: -1400, reason: 'Inspection Repair: Paid out-of-pocket for roof leak' },
-      { z: 550, lane: 0.75, type: 'credit', title: '🤝 NEGOTIATE CREDIT (+$1,200)', cost: 1200, reason: 'Seller Credit: Negotiated seller credit for roof defect!' },
+      // Fork 1 (Mile 0.7): Home Inspection Defect Discovered (3 Lanes, all look neutral!)
+      {
+        z: 700, lane: -0.75, type: 'choice',
+        signText: '📋 WAIVE INSPECTION',
+        outcomeTitle: 'Waived Home Inspection ($0 Paid Today)',
+        cost: 0,
+        setsTrap: true,
+        lesson: 'You paid $0 today by waiving the inspection—but any hidden plumbing or furnace defects are now your responsibility!'
+      },
+      {
+        z: 700, lane: 0, type: 'choice',
+        signText: '🛠️ PAY CONTRACTOR DIRECT',
+        outcomeTitle: 'Paid Out-of-Pocket for Repairs (-$2,400)',
+        cost: -2400,
+        lesson: 'You hired a contractor yourself. The house is fixed, but paying out-of-pocket drained $2,400 from your liquid cash reserves.'
+      },
+      {
+        z: 700, lane: 0.75, type: 'choice',
+        signText: '🤝 REQUEST SELLER CREDIT',
+        outcomeTitle: 'Negotiated Seller Credit (-$300 Re-Inspection)',
+        cost: -300,
+        lesson: 'Great call! Using your Inspection Contingency, the seller agreed to cover the $2,400 repair via a credit, costing you only a $300 re-inspection fee.'
+      },
 
-      // Mile 1.0: Junk Fee Trap
-      { z: 1050, lane: 0, type: 'junk', title: '💸 LENDER JUNK FEE (-$650)', cost: -650, reason: 'Bogus Admin Courier Fee (Failed to dodge)' },
-      { z: 1150, lane: -0.8, type: 'boost', title: '💎 EARNEST DEPOSIT CREDIT (+$1,000)', cost: 1000, reason: 'Earnest Money Deposit credited toward closing!' },
+      // Fork 2 (Mile 1.5): Reviewing the Loan Estimate Form
+      {
+        z: 1500, lane: -0.65, type: 'choice',
+        signText: '⚡ EXPEDITED COURIER ADD-ON',
+        outcomeTitle: 'Paid Lender "Junk Fee" (-$650)',
+        cost: -650,
+        lesson: '"Expedited Courier & Admin Processing" is a classic padded Junk Fee! Always question non-essential administrative add-ons on your Loan Estimate.'
+      },
+      {
+        z: 1500, lane: 0.65, type: 'choice',
+        signText: '🔍 AUDIT LOAN ESTIMATE FEES',
+        outcomeTitle: 'Removed Padded Junk Fees (+$600 Saved)',
+        cost: 600,
+        lesson: 'By comparing your Loan Estimate line-by-line, you got the lender to waive $600 in bogus processing charges!'
+      },
 
-      // Mile 1.6: HVAC Inspection Fork
-      { z: 1650, lane: 0.7, type: 'defect', title: '🔥 BROKEN FURNACE (-$2,200)', cost: -2200, reason: 'HVAC Replacement paid from liquid cash reserves' },
-      { z: 1650, lane: -0.7, type: 'credit', title: '🛠️ SELLER REPAIR CREDIT (+$1,500)', cost: 1500, reason: 'Seller covered furnace repair via closing credit!' },
+      // Milestone (Mile 2.2): Underwriting Traffic Jam (Blocks all 3 lanes)
+      { z: 2250, lane: -0.8, type: 'traffic_wall', signText: '🚗 UNDERWRITING BACKLOG' },
+      { z: 2250, lane: 0, type: 'traffic_wall', signText: '🚗 PAPERWORK TRAFFIC AHEAD' },
+      { z: 2250, lane: 0.8, type: 'traffic_wall', signText: '🚗 UNDERWRITING BACKLOG' },
 
-      // Mile 2.2: Underwriting Paperwork Traffic Jam (All 3 lanes blocked!)
-      { z: 2250, lane: -0.8, type: 'traffic_wall', title: '🛑 UNDERWRITING TRAFFIC', cost: -1500 },
-      { z: 2250, lane: 0, type: 'traffic_wall', title: '🛑 BRAKE & CUT ENGINE [SPACE]!', cost: -1500 },
-      { z: 2250, lane: 0.8, type: 'traffic_wall', title: '🛑 RATE LOCK BLEED AHEAD', cost: -1500 },
+      // Fork 3 (Mile 3.0): Low Home Appraisal ($295k vs $300k Offer)
+      {
+        z: 3050, lane: -0.65, type: 'choice',
+        signText: '💵 COVER APPRAISAL GAP',
+        outcomeTitle: 'Paid Appraisal Shortage in Cash (-$2,500)',
+        cost: -2500,
+        lesson: 'Because the bank only lends based on the appraised value, paying the Appraisal Gap yourself drained $2,500 from your cash reserves.'
+      },
+      {
+        z: 3050, lane: 0.65, type: 'choice',
+        signText: '📊 SUBMIT COMP SALES APPEAL',
+        outcomeTitle: 'Appraisal Appeal Succeeded (-$200 Filing)',
+        cost: -200,
+        lesson: 'Your agent submitted 3 recent neighborhood sales ("Comps") and the seller split the difference—saving your cash reserves!'
+      },
 
-      // Mile 3.0: Appraisal Gap vs Price Renegotiation
-      { z: 3000, lane: -0.7, type: 'defect', title: '📉 APPRAISAL GAP (-$1,800)', cost: -1800, reason: 'Appraisal came in low—paid cash to bridge the gap' },
-      { z: 3000, lane: 0.7, type: 'credit', title: '📋 APPEAL APPRAISAL ($0 LOSS)', cost: 500, reason: 'Successfully appealed low appraisal with comps!' },
+      // Milestone (Mile 3.8): Mandatory Escrow Weigh Station
+      {
+        z: 3850, lane: 0, type: 'escrow_arch',
+        signText: '⚖️ ESCROW RESERVE WEIGH STATION (TAX & INSURANCE)'
+      },
 
-      // Mile 3.8: Mandatory Escrow Weigh Station Arch (Spans Highway)
-      { z: 3800, lane: 0, type: 'escrow_arch', title: '⚖️ ESCROW WEIGH STATION (-$4,200 TAX & INS.)', cost: -4200 },
+      // Fork 4 (Mile 4.5): Final Walkthrough Wire Instructions
+      {
+        z: 4500, lane: -0.65, type: 'choice',
+        signText: '📧 USE EMAIL WIRE CHANGE',
+        outcomeTitle: 'Phishing Wire Spoof Penalty (-$1,800)',
+        cost: -1800,
+        lesson: 'Never trust last-minute emailed wire changes! Real-estate wire fraud targets buyers right before closing—always call the Title Office directly.'
+      },
+      {
+        z: 4500, lane: 0.65, type: 'choice',
+        signText: '📞 CALL TITLE OFFICE TO VERIFY',
+        outcomeTitle: 'Verified Safe Wire & Earnest Credit (+$500)',
+        cost: 500,
+        lesson: 'Calling the Title Officer directly protected your funds and confirmed your Earnest Money deposit credit!'
+      },
 
-      // Mile 4.4: Final Walkthrough Check
-      { z: 4400, lane: 0.6, type: 'junk', title: '💸 WIRE TRANSFER SCAM (-$1,200)', cost: -1200, reason: 'Unverified wire fee penalty' },
-      { z: 4450, lane: -0.7, type: 'boost', title: '🏡 FIRST-TIME BUYER GRANT (+$1,500)', cost: 1500, reason: 'Local First-Time Buyer Closing Grant applied!' },
-
-      // Mile 5.0: Finish Line (County Title Office)
-      { z: 5000, lane: 0, type: 'finish_arch', title: '🏛️ COUNTY TITLE OFFICE — CLOSING TABLE!', cost: 0 }
+      // Finish Line (Mile 5.0)
+      {
+        z: 5000, lane: 0, type: 'finish_arch',
+        signText: '🏛️ COUNTY TITLE OFFICE — CLOSING TABLE'
+      }
     ];
   }
 
-  showPopup(text, color = '#34d399') {
+  showPopup(text, color = '#ffffff') {
     if (!this.floatingPopup) return;
     this.floatingPopup.setText(text);
     this.floatingPopup.setColor(color);
@@ -171,9 +216,9 @@ class EscrowFOVScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.floatingPopup);
     this.tweens.add({
       targets: this.floatingPopup,
-      y: 155,
+      y: 150,
       alpha: 0,
-      duration: 2100,
+      duration: 2400,
       ease: 'Cubic.easeOut'
     });
   }
@@ -181,19 +226,11 @@ class EscrowFOVScene extends Phaser.Scene {
   toggleEngine() {
     this.engineRunning = !this.engineRunning;
     if (!this.engineRunning) {
-      this.showPopup('❄️ ENGINE CUT OFF (FUEL / RATE LOCK PAUSED)', '#38bdf8');
+      this.showPopup('ENGINE OFF', '#38bdf8');
     } else {
-      this.showPopup('🔥 ENGINE STARTED! PRESS [W / ▲] TO DRIVE', '#34d399');
+      this.showPopup('ENGINE ON', '#34d399');
     }
-    if (this.onTelemetryUpdate) {
-      this.onTelemetryUpdate({
-        speed: Math.round(this.speed),
-        distance: this.distance,
-        engineRunning: this.engineRunning,
-        inTrafficJam: this.inTrafficJam,
-        trafficTimer: this.trafficTimer
-      });
-    }
+    this.emitTelemetry();
   }
 
   setControlInput(action, value) {
@@ -201,72 +238,7 @@ class EscrowFOVScene extends Phaser.Scene {
     this.virtualInput[action] = value;
   }
 
-  update(time, delta) {
-    if (this.finished) return;
-    const dt = delta / 1000;
-    const vInput = this.virtualInput || {};
-
-    // 1. Handle Throttle & Braking
-    const upPressed = this.cursors.up.isDown || this.keys.W.isDown || vInput.up;
-    const downPressed = this.cursors.down.isDown || this.keys.S.isDown || vInput.down;
-    const leftPressed = this.cursors.left.isDown || this.keys.A.isDown || vInput.left;
-    const rightPressed = this.cursors.right.isDown || this.keys.D.isDown || vInput.right;
-
-    if (this.engineRunning && upPressed && !this.inTrafficJam) {
-      this.speed = Math.min(this.maxSpeed, this.speed + 48 * dt);
-    } else if (downPressed) {
-      this.speed = Math.max(0, this.speed - 95 * dt);
-    } else {
-      // Natural friction coasting
-      this.speed = Math.max(0, this.speed - 22 * dt);
-    }
-
-    // Stop forward motion if sitting at traffic jam barrier
-    if (this.inTrafficJam && !this.trafficCleared) {
-      this.speed = 0;
-    }
-
-    // 2. Handle Steering (Only steers when moving or rolling)
-    let steerDir = 0;
-    if (leftPressed) steerDir = -1;
-    if (rightPressed) steerDir = 1;
-
-    if (this.speed > 2) {
-      this.playerX = Phaser.Math.Clamp(this.playerX + steerDir * 1.45 * dt, -1.05, 1.05);
-    }
-
-    // 3. Advance Highway Distance
-    const distDelta = this.speed * 4.2 * dt;
-    this.distance += distDelta;
-    this.roadZ += distDelta;
-
-    // Check if approaching Traffic Jam Wall (Mile 2.2 / z = 2250)
-    if (!this.trafficCleared && !this.inTrafficJam && this.distance >= 2110 && this.distance < 2260) {
-      if (this.speed > 45 && this.distance >= 2190) {
-        // Rear-ended traffic because player didn't brake!
-        this.speed = 0;
-        this.inTrafficJam = true;
-        this.cameras.main.shake(300, 0.02);
-        this.showPopup('💥 CRASHED INTO UNDERWRITING DELAY! (-$1,000)', '#ef4444');
-        if (this.onObstacleHit) {
-          this.onObstacleHit({
-            cost: -1000,
-            title: 'Rear-Ended Underwriting Backlog',
-            lesson: 'Rushing into underwriting without preparing your paperwork causes costly rush fees! Cut your engine [SPACE] now!'
-          });
-        }
-      } else if (this.distance >= 2165) {
-        // Stopped safely at traffic jam
-        this.speed = 0;
-        this.inTrafficJam = true;
-        this.showPopup('🛑 TRAFFIC GRIDLOCK! PRESS [SPACE] TO CUT ENGINE!', '#fbbf24');
-      }
-    }
-
-    // 4. Render 3D Perspective World
-    this.render3DWorld(steerDir, time);
-
-    // 5. Emit Telemetry to React HUD
+  emitTelemetry() {
     if (this.onTelemetryUpdate) {
       this.onTelemetryUpdate({
         speed: Math.round(this.speed),
@@ -278,12 +250,83 @@ class EscrowFOVScene extends Phaser.Scene {
     }
   }
 
-  // Projects 3D world coordinates (laneX, depthZ) onto 2D screen perspective
+  update(time, delta) {
+    if (this.finished) return;
+    const dt = delta / 1000;
+    const vInput = this.virtualInput || {};
+
+    const up = this.cursors.up.isDown || this.keys.W.isDown || vInput.up;
+    const down = this.cursors.down.isDown || this.keys.S.isDown || vInput.down;
+    const left = this.cursors.left.isDown || this.keys.A.isDown || vInput.left;
+    const right = this.cursors.right.isDown || this.keys.D.isDown || vInput.right;
+
+    if (this.engineRunning && up && !this.inTrafficJam) {
+      this.speed = Math.min(this.maxSpeed, this.speed + 50 * dt);
+    } else if (down) {
+      this.speed = Math.max(0, this.speed - 95 * dt);
+    } else {
+      this.speed = Math.max(0, this.speed - 24 * dt);
+    }
+
+    if (this.inTrafficJam && !this.trafficCleared) {
+      this.speed = 0;
+    }
+
+    let steerDir = 0;
+    if (left) steerDir = -1;
+    if (right) steerDir = 1;
+
+    if (this.speed > 2) {
+      this.playerX = Phaser.Math.Clamp(this.playerX + steerDir * 1.45 * dt, -1.05, 1.05);
+    }
+
+    const distDelta = this.speed * 4.2 * dt;
+    this.distance += distDelta;
+    this.roadZ += distDelta;
+
+    // Delayed Consequence at Mile 4.2 if Player Waived the Inspection earlier!
+    if (this.waivedInspectionTrap && !this.trapTriggered && this.distance >= 4150) {
+      this.trapTriggered = true;
+      this.cameras.main.shake(350, 0.02);
+      this.showPopup('💥 UNINSPECTED FURNACE BROKE! (-$3,200)', '#ef4444');
+      if (this.onObstacleHit) {
+        this.onObstacleHit({
+          cost: -3200,
+          title: 'Delayed Consequence: Waived Inspection Furnace Failure (-$3,200)',
+          lesson: 'Because you waived the Home Inspection at Mile 0.7 to save time, a cracked furnace went unnoticed and cost you $3,200 right before closing!'
+        });
+      }
+    }
+
+    // Approaching Underwriting Traffic Jam at Mile 2.2
+    if (!this.trafficCleared && !this.inTrafficJam && this.distance >= 2110 && this.distance < 2260) {
+      if (this.speed > 45 && this.distance >= 2190) {
+        this.speed = 0;
+        this.inTrafficJam = true;
+        this.cameras.main.shake(300, 0.02);
+        this.showPopup('💥 REAR-ENDED UNDERWRITING BACKLOG! (-$1,000)', '#ef4444');
+        if (this.onObstacleHit) {
+          this.onObstacleHit({
+            cost: -1000,
+            title: 'Crashed into Underwriting Delay (-$1,000 Rush Fee)',
+            lesson: 'You didn’t brake in time for the underwriting traffic! Now you are stuck waiting—think about how to stop your Rate Lock from bleeding fees!'
+          });
+        }
+      } else if (this.distance >= 2165) {
+        this.speed = 0;
+        this.inTrafficJam = true;
+        this.showPopup('🛑 STUCK IN UNDERWRITING DELAY!', '#fbbf24');
+      }
+    }
+
+    this.render3DWorld(steerDir, time);
+    this.emitTelemetry();
+  }
+
   project3D(laneX, depthZ) {
     const { width, height } = this.scale;
     const maxViewZ = 700;
     const normalizedZ = Phaser.Math.Clamp(depthZ / maxViewZ, 0.01, 1);
-    // Perspective curve (closer = 0, horizon = 1)
     const perspective = 1 / (1 + normalizedZ * 4.5);
 
     const screenY = this.horizonY + (height - this.horizonY) * perspective;
@@ -294,33 +337,28 @@ class EscrowFOVScene extends Phaser.Scene {
   }
 
   render3DWorld(steerDir, time) {
-    const { width, height } = this.scale;
+    const { width } = this.scale;
     const gfx = this.worldGfx;
     gfx.clear();
 
-    // Hide all pooled text labels first
     this.labelPool.forEach(l => l.setVisible(false));
     let labelIdx = 0;
 
-    // 1. Draw Ground & Road Trapezoid Slices from Horizon to Bottom
+    // 1. Road Perspective Slices
     const slices = 28;
     for (let i = slices - 1; i >= 0; i--) {
       const zNear = (i / slices) * 700;
       const zFar = ((i + 1) / slices) * 700;
-
       const pNear = this.project3D(0, zNear);
       const pFar = this.project3D(0, zFar);
-
       const stripePhase = Math.floor((this.roadZ + zNear) / 45) % 2 === 0;
 
-      // Grass Shoulder
       gfx.fillStyle(stripePhase ? 0x064e3b : 0x042f2e, 1);
       gfx.fillRect(0, pFar.screenY, width, pNear.screenY - pFar.screenY + 1);
 
-      // Rumble Curbs
       const curbNear = pNear.roadHalfWidth * 1.08;
       const curbFar = pFar.roadHalfWidth * 1.08;
-      gfx.fillStyle(stripePhase ? 0xef4444 : 0xf8fafc, 1);
+      gfx.fillStyle(stripePhase ? 0x475569 : 0xe2e8f0, 1);
       gfx.fillPoints([
         { x: width / 2 - curbFar, y: pFar.screenY },
         { x: width / 2 + curbFar, y: pFar.screenY },
@@ -328,7 +366,6 @@ class EscrowFOVScene extends Phaser.Scene {
         { x: width / 2 - curbNear, y: pNear.screenY }
       ], true);
 
-      // Asphalt Road
       gfx.fillStyle(stripePhase ? 0x1e293b : 0x0f172a, 1);
       gfx.fillPoints([
         { x: width / 2 - pFar.roadHalfWidth, y: pFar.screenY },
@@ -337,33 +374,30 @@ class EscrowFOVScene extends Phaser.Scene {
         { x: width / 2 - pNear.roadHalfWidth, y: pNear.screenY }
       ], true);
 
-      // 3-Lane Dashed Dividers
       if (stripePhase) {
-        gfx.fillStyle(0xfbbf24, 0.85);
+        gfx.fillStyle(0xfbbf24, 0.8);
         [-0.35, 0.35].forEach(laneDiv => {
           const xNear = width / 2 + laneDiv * pNear.roadHalfWidth;
-          const xFar = width / 2 + laneDiv * pFar.roadHalfWidth;
           const wNear = Math.max(1.5, 5 * pNear.scale);
           gfx.fillRect(xNear - wNear / 2, pFar.screenY, wNear, pNear.screenY - pFar.screenY);
         });
       }
     }
 
-    // 2. Render Roadside Trees / Streetlights
+    // 2. Roadside Streetlights
     this.scenery.forEach(item => {
       let relZ = (item.z - (this.roadZ % 1800) + 1800) % 1800;
       if (relZ > 10 && relZ < 680) {
         const proj = this.project3D(item.side, relZ);
-        const poleH = 95 * proj.scale;
+        const poleH = 90 * proj.scale;
         gfx.fillStyle(0x64748b, 1);
         gfx.fillRect(proj.screenX - 2 * proj.scale, proj.screenY - poleH, 4 * proj.scale, poleH);
-        // Neon streetlamp glow
-        gfx.fillStyle(0x38bdf8, 0.9);
-        gfx.fillCircle(proj.screenX - (item.side > 0 ? 8 : -8) * proj.scale, proj.screenY - poleH, 6 * proj.scale);
+        gfx.fillStyle(0x38bdf8, 0.85);
+        gfx.fillCircle(proj.screenX, proj.screenY - poleH, 5 * proj.scale);
       }
     });
 
-    // 3. Render & Check Collisions for Highway Obstacles (Sorted Far to Near)
+    // 3. Render Neutral Highway Decision Gates & Check Collisions
     const visibleObstacles = this.obstacles
       .map(obs => ({ ...obs, relZ: obs.z - this.distance }))
       .filter(obs => obs.relZ > -25 && obs.relZ < 680)
@@ -371,88 +405,84 @@ class EscrowFOVScene extends Phaser.Scene {
 
     visibleObstacles.forEach(obs => {
       const proj = this.project3D(obs.lane, Math.max(5, obs.relZ));
-      const w = 85 * proj.scale;
-      const h = 55 * proj.scale;
+      const w = 92 * proj.scale;
+      const h = 54 * proj.scale;
 
       if (obs.type === 'escrow_arch' || obs.type === 'finish_arch') {
-        // Full-Highway Toll Arch
         const leftPost = this.project3D(-1.05, Math.max(5, obs.relZ));
         const rightPost = this.project3D(1.05, Math.max(5, obs.relZ));
         const archHeight = 130 * proj.scale;
-        const archColor = obs.type === 'escrow_arch' ? 0x0284c7 : 0x10b981;
+        const archColor = obs.type === 'escrow_arch' ? 0x0284c7 : 0x4f46e5;
 
         gfx.fillStyle(archColor, 0.95);
         gfx.fillRect(leftPost.screenX - 8 * proj.scale, proj.screenY - archHeight, 16 * proj.scale, archHeight);
         gfx.fillRect(rightPost.screenX - 8 * proj.scale, proj.screenY - archHeight, 16 * proj.scale, archHeight);
-        gfx.fillRect(leftPost.screenX, proj.screenY - archHeight, rightPost.screenX - leftPost.screenX, 28 * proj.scale);
+        gfx.fillRect(leftPost.screenX, proj.screenY - archHeight, rightPost.screenX - leftPost.screenX, 26 * proj.scale);
 
-        if (labelIdx < this.labelPool.length && obs.relZ < 550) {
+        if (labelIdx < this.labelPool.length && obs.relZ < 560) {
           const lbl = this.labelPool[labelIdx++];
-          lbl.setText(obs.title);
+          lbl.setText(obs.signText);
           lbl.setPosition(width / 2, proj.screenY - archHeight - 4);
-          lbl.setScale(Math.max(0.55, Math.min(1.1, proj.scale * 1.3)));
+          lbl.setScale(Math.max(0.55, Math.min(1.05, proj.scale * 1.25)));
           lbl.setVisible(true);
         }
       } else {
-        // Lane Gate / Crate / Traffic Car / Pothole
-        let boxColor = 0xef4444;
-        if (obs.type === 'credit') boxColor = 0x10b981;
-        if (obs.type === 'boost') boxColor = 0xf59e0b;
-        if (obs.type === 'junk') boxColor = 0xa855f7;
-        if (obs.type === 'traffic_wall') boxColor = 0xdc2626;
-
-        gfx.fillStyle(boxColor, 0.92);
+        // Neutral Highway Sign Gate (All choices look like identical blue/indigo highway signs!)
+        const gateColor = obs.type === 'traffic_wall' ? 0xb91c1c : 0x1e3a8a;
+        gfx.fillStyle(gateColor, 0.92);
         gfx.fillRoundedRect(proj.screenX - w / 2, proj.screenY - h, w, h, 6 * proj.scale);
-        gfx.lineStyle(2 * proj.scale, 0xffffff, 0.9);
+        gfx.lineStyle(2 * proj.scale, 0x93c5fd, 0.9);
         gfx.strokeRoundedRect(proj.screenX - w / 2, proj.screenY - h, w, h, 6 * proj.scale);
 
-        if (labelIdx < this.labelPool.length && obs.relZ < 480) {
+        if (labelIdx < this.labelPool.length && obs.relZ < 520) {
           const lbl = this.labelPool[labelIdx++];
-          lbl.setText(obs.title);
+          lbl.setText(obs.signText);
           lbl.setPosition(proj.screenX, proj.screenY - h - 4);
           lbl.setScale(Math.max(0.5, Math.min(1.0, proj.scale * 1.25)));
           lbl.setVisible(true);
         }
       }
 
-      // Check Collision with Player Truck (Player sits around relZ = 18..45)
+      // Collision Detection
       if (!obs.hit && obs.relZ <= 42 && obs.relZ >= -10) {
         if (obs.type === 'escrow_arch') {
           obs.hit = true;
           this.escrowCollected = true;
-          this.showPopup('⚖️ $4,200 LOADED INTO ESCROW TRAILER!', '#38bdf8');
+          this.showPopup('⚖️ $4,200 TRANSFERRED TO ESCROW TRAILER', '#38bdf8');
           if (this.onEscrowCheckpoint) this.onEscrowCheckpoint();
         } else if (obs.type === 'finish_arch') {
           obs.hit = true;
           this.finished = true;
           this.speed = 0;
           if (this.onFinishLine) this.onFinishLine();
-        } else if (obs.type !== 'traffic_wall' && Math.abs(this.playerX - obs.lane) < 0.42) {
+        } else if (obs.type === 'choice' && Math.abs(this.playerX - obs.lane) < 0.44) {
           obs.hit = true;
-          // Disable sibling obstacle at same Z if it was a decision fork
+          // Disable the other lanes at this same fork so only 1 option triggers
           this.obstacles.forEach(other => {
-            if (Math.abs(other.z - obs.z) < 10) other.hit = true;
+            if (Math.abs(other.z - obs.z) < 20) other.hit = true;
           });
 
-          if (obs.cost < 0) {
-            this.cameras.main.shake(220, 0.012);
-            this.showPopup(`${obs.title}`, '#f87171');
-          } else {
-            this.showPopup(`${obs.title}`, '#34d399');
+          if (obs.setsTrap) {
+            this.waivedInspectionTrap = true;
           }
+
+          const popColor = obs.cost < -500 ? '#f87171' : obs.cost > 0 ? '#34d399' : '#fbbf24';
+          if (obs.cost < -500) {
+            this.cameras.main.shake(200, 0.012);
+          }
+          this.showPopup(obs.outcomeTitle, popColor);
 
           if (this.onObstacleHit) {
             this.onObstacleHit({
               cost: obs.cost,
-              title: obs.title,
-              lesson: obs.reason
+              title: obs.outcomeTitle,
+              lesson: obs.lesson
             });
           }
         }
       }
     });
 
-    // 4. Draw Player 3D Chase-Cam Moving Truck at Bottom of Screen
     this.drawPlayerTruck(gfx, steerDir, time);
   }
 
@@ -463,26 +493,21 @@ class EscrowFOVScene extends Phaser.Scene {
     const truckY = height - 28 + bounce;
     const tilt = steerDir * 4;
 
-    // Truck Shadow
     gfx.fillStyle(0x000000, 0.55);
     gfx.fillEllipse(truckScreenX, height - 16, 130, 22);
 
-    // Left & Right Dual Tires
     gfx.fillStyle(0x090d16, 1);
     gfx.fillRoundedRect(truckScreenX - 58, truckY - 18, 22, 24, 4);
     gfx.fillRoundedRect(truckScreenX + 36, truckY - 18, 22, 24, 4);
 
-    // Main Cargo Box (3D Rear View)
     gfx.fillStyle(this.truckColor, 1);
     gfx.fillRoundedRect(truckScreenX - 54 + tilt, truckY - 82, 108, 68, 8);
     gfx.lineStyle(3, 0xe2e8f0, 1);
     gfx.strokeRoundedRect(truckScreenX - 54 + tilt, truckY - 82, 108, 68, 8);
 
-    // Roof 3D Bevel
     gfx.fillStyle(0xffffff, 0.18);
     gfx.fillRect(truckScreenX - 50 + tilt, truckY - 80, 100, 10);
 
-    // Escrow Tank Gauge on Back Door of Truck
     gfx.fillStyle(0x0f172a, 0.9);
     gfx.fillRoundedRect(truckScreenX - 38 + tilt, truckY - 62, 76, 26, 4);
     if (this.escrowCollected) {
@@ -490,13 +515,11 @@ class EscrowFOVScene extends Phaser.Scene {
       gfx.fillRoundedRect(truckScreenX - 35 + tilt, truckY - 59, 70, 20, 3);
     }
 
-    // Brake / Tail Lights (Glow bright red when braking or stopped in traffic)
     const braking = this.cursors?.down?.isDown || this.keys?.S?.isDown || this.inTrafficJam;
     gfx.fillStyle(braking ? 0xff0000 : 0x991b1b, 1);
     gfx.fillRect(truckScreenX - 48 + tilt, truckY - 24, 18, 7);
     gfx.fillRect(truckScreenX + 30 + tilt, truckY - 24, 18, 7);
 
-    // License Plate ("CLOSING")
     gfx.fillStyle(0xfacc15, 1);
     gfx.fillRect(truckScreenX - 16 + tilt, truckY - 25, 32, 9);
   }

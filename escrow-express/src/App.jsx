@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Truck, ShieldAlert, DollarSign, Gauge, Power, RotateCcw,
-  User, Radio, FileText, ArrowUp, ArrowDown, ArrowLeft, ArrowRight
+  User, Radio, FileText, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, BookOpen, X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import PhaserCanvas from './components/PhaserCanvas';
 import OnboardingFlow from './components/OnboardingFlow';
 
-const STORAGE_KEY = 'nest_navigate_fov_save_v3';
+const STORAGE_KEY = 'nest_navigate_fov_save_v4';
 
 const INITIAL_GAME = {
-  stage: 'onboarding', // 'onboarding' | 'playing' | 'summary'
+  stage: 'onboarding',
   profile: null,
-  cashReserves: 12000,
+  cashReserves: 11500,
   escrowFunded: 0,
   escrowRequired: 4200,
   history: [],
@@ -28,6 +28,8 @@ export default function App() {
     }
   });
 
+  const [showGlossaryModal, setShowGlossaryModal] = useState(false);
+
   const [telemetry, setTelemetry] = useState({
     speed: 0,
     distance: 0,
@@ -37,8 +39,8 @@ export default function App() {
   });
 
   const [radioMessage, setRadioMessage] = useState({
-    title: 'CO-PILOT RADIO: PRESS [W / ▲] TO ACCELERATE!',
-    desc: 'Steer with [A/D] or [◀/▶]. Aim for GREEN Seller Credit gates and dodge RED Inspection Potholes & PURPLE Junk Fees!'
+    title: 'CO-PILOT RADIO: HOLD [W / ▲] TO DRIVE!',
+    desc: 'Read the blue highway decision signs ahead carefully and steer [A/D or ◀/▶] into the option that protects your Cash-to-Close!'
   });
 
   const sceneControlRef = useRef(null);
@@ -74,8 +76,8 @@ export default function App() {
     });
 
     setRadioMessage({
-      title: 'HIGHWAY ENGAGED — HOLD [W] OR [▲] TO DRIVE!',
-      desc: 'Lender origination fees (-$1,800) were deducted. Drive 5.0 miles to the Title Office without running out of Cash-to-Close!'
+      title: 'HIGHWAY ENGAGED — HOLD [W / ▲] TO ACCELERATE!',
+      desc: 'Standard Origination Fees (-$1,800) were deducted. Watch the highway signs ahead—none of them are color-coded, so think before you steer!'
     });
   };
 
@@ -85,10 +87,7 @@ export default function App() {
       cashReserves: prev.cashReserves + cost,
       history: [...prev.history, { item: title, cost, lesson }]
     }));
-    setRadioMessage({
-      title: `${title}`,
-      desc: lesson
-    });
+    setRadioMessage({ title, desc: lesson });
   };
 
   const handleTrafficTick = (timeLeft, burnAmount, engineOn) => {
@@ -100,18 +99,18 @@ export default function App() {
     }
     setRadioMessage({
       title: engineOn
-        ? `🚨 UNDERWRITING DELAY (${timeLeft}s): BURNING -$150/SEC!`
-        : `❄️ ENGINE CUT (${timeLeft}s LEFT): RATE LOCK PROTECTED!`,
+        ? `🚨 UNDERWRITING DELAY (${timeLeft}s): RATE LOCK BURNING -$150/SEC!`
+        : `❄️ ENGINE OFF (${timeLeft}s LEFT): RATE LOCK PAUSED!`,
       desc: engineOn
-        ? 'Your 30-day Rate Lock is expiring in traffic! Press [SPACE] or click CUT ENGINE below to stop paying daily extension fees!'
-        : 'Smart move! Cutting your engine froze your rate lock so you lose $0 while underwriters clear the backlog.'
+        ? 'Your 30-day Rate Lock is expiring while idling in traffic! Remember how to stop daily extension fees?'
+        : 'Rate Lock protected! Waiting for underwriters to clear the paperwork backlog...'
     });
   };
 
   const handleTrafficCleared = () => {
     setRadioMessage({
-      title: '🟢 UNDERWRITING CLEARED! START ENGINE & HIT THE GAS!',
-      desc: 'Turn your engine back on [SPACE] and hold [W / ▲] to reach the Escrow Weigh Station at Mile 3.8!'
+      title: '🟢 UNDERWRITING CLEARED! RESTART ENGINE & DRIVE!',
+      desc: 'If your engine is off, press [SPACE] to restart it and hold [W / ▲] to continue toward the Escrow Weigh Station!'
     });
   };
 
@@ -131,7 +130,7 @@ export default function App() {
     }));
     setRadioMessage({
       title: '⚖️ ESCROW TRAILER FUNDED (-$4,200)!',
-      desc: 'You prepaid 6 months of property taxes and 12 months of home insurance into your Escrow Reserve. Sprint to the Title Office!'
+      desc: '6 months of property taxes and 12 months of hazard insurance are now locked in your Escrow Reserve. Drive to the Title Office!'
     });
   };
 
@@ -150,7 +149,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col select-none">
-      {/* Top Arcade Header */}
+      {/* Header */}
       <header className="border-b border-indigo-500/20 bg-slate-900/90 backdrop-blur px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-gradient-to-br from-indigo-500 to-fuchsia-600 rounded-xl text-white shadow-lg shadow-indigo-500/30">
@@ -164,12 +163,19 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {game.stage === 'playing' && (
+            <button
+              onClick={() => setShowGlossaryModal(true)}
+              className="text-xs text-indigo-300 hover:text-white flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-950/80 border border-indigo-500/40 transition font-bold"
+            >
+              <BookOpen size={14} /> Terms Guide
+            </button>
+          )}
           {game.profile && (
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs">
               <User size={14} className="text-indigo-400" />
               <span className="font-bold text-white">{game.profile.name}</span>
-              <span className="text-indigo-400 font-semibold">({game.profile.loanId.toUpperCase()})</span>
             </div>
           )}
           {game.stage !== 'onboarding' && (
@@ -177,11 +183,40 @@ export default function App() {
               onClick={handleReset}
               className="text-xs text-slate-300 hover:text-rose-400 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 transition"
             >
-              <RotateCcw size={13} /> Reset Profile
+              <RotateCcw size={13} /> Home / Tutorial
             </button>
           )}
         </div>
       </header>
+
+      {/* Quick In-Game Glossary Popup Modal */}
+      {showGlossaryModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <BookOpen size={18} className="text-indigo-400" /> Quick Homebuyer Field Guide
+              </h3>
+              <button onClick={() => setShowGlossaryModal(false)} className="text-slate-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs text-slate-300 max-h-80 overflow-y-auto pr-1">
+              <p><strong className="text-indigo-300">Inspection Contingency / Seller Credit:</strong> Lets you ask the seller to credit closing costs for repairs instead of paying out-of-pocket or risking uninspected defects.</p>
+              <p><strong className="text-indigo-300">Loan Estimate Audit:</strong> Reviewing lender fees to remove padded "Junk Fees" like expedited courier charges.</p>
+              <p><strong className="text-indigo-300">Underwriting & Rate Lock:</strong> If underwriting is delayed, cut your engine [SPACE] to freeze your rate lock and avoid daily extension fees.</p>
+              <p><strong className="text-indigo-300">Appraisal Appeal (Comps):</strong> Using comparable neighborhood sales to challenge a low appraisal instead of paying the gap in cash.</p>
+              <p><strong className="text-indigo-300">Escrow Reserve:</strong> Prepaying 6 months of property taxes + 12 months of hazard insurance ($4,200) into a locked lender reserve.</p>
+            </div>
+            <button
+              onClick={() => setShowGlossaryModal(false)}
+              className="mt-5 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs"
+            >
+              Back to Highway
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 max-w-5xl w-full mx-auto p-3 sm:p-5">
         {game.stage === 'onboarding' && (
@@ -229,10 +264,8 @@ export default function App() {
               sceneControlRef={sceneControlRef}
             />
 
-            {/* Arcade Cockpit Dashboard & Touch/Click Controls */}
+            {/* Arcade Cockpit Dashboard */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-2xl">
-              
-              {/* Left: Financial Fuel & Escrow Gauges (5 cols) */}
               <div className="lg:col-span-5 grid grid-cols-2 gap-3">
                 <div className={`p-3.5 rounded-2xl border ${
                   game.cashReserves < 2500 ? 'bg-rose-950/50 border-rose-600' : 'bg-slate-950 border-slate-800'
@@ -264,7 +297,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Center: Speedometer & Engine Ignition Button (3 cols) */}
               <div className="lg:col-span-3 flex items-center justify-around bg-slate-950 border border-slate-800 rounded-2xl p-3">
                 <div className="text-center">
                   <div className="text-[10px] font-bold uppercase text-slate-400 flex items-center gap-1 justify-center">
@@ -282,19 +314,16 @@ export default function App() {
                   onClick={() => sceneControlRef.current?.toggleEngine()}
                   className={`px-4 py-3 rounded-2xl font-black text-xs flex flex-col items-center gap-1 transition shadow-lg ${
                     telemetry.engineRunning
-                      ? telemetry.inTrafficJam
-                        ? 'bg-rose-600 hover:bg-rose-500 text-white animate-bounce shadow-rose-600/40'
-                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      ? 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40'
                       : 'bg-sky-600 hover:bg-sky-500 text-white'
                   }`}
                 >
                   <Power size={18} />
-                  <span>{telemetry.engineRunning ? 'ENGINE ON' : 'ENGINE CUT'}</span>
+                  <span>{telemetry.engineRunning ? 'ENGINE ON' : 'ENGINE OFF'}</span>
                   <span className="text-[9px] opacity-80">[SPACEBAR]</span>
                 </button>
               </div>
 
-              {/* Right: Interactive Arcade Pedals & Steering (4 cols) */}
               <div className="lg:col-span-4 flex items-center justify-between gap-2 bg-slate-950 border border-slate-800 rounded-2xl p-3">
                 <div className="flex gap-1.5">
                   <button
@@ -304,7 +333,6 @@ export default function App() {
                     onTouchStart={() => sceneControlRef.current?.setInput('left', true)}
                     onTouchEnd={() => sceneControlRef.current?.setInput('left', false)}
                     className="p-3.5 bg-slate-800 hover:bg-indigo-600 active:scale-95 rounded-xl text-white transition"
-                    title="Steer Left (A or Left Arrow)"
                   >
                     <ArrowLeft size={20} />
                   </button>
@@ -315,7 +343,6 @@ export default function App() {
                     onTouchStart={() => sceneControlRef.current?.setInput('right', true)}
                     onTouchEnd={() => sceneControlRef.current?.setInput('right', false)}
                     className="p-3.5 bg-slate-800 hover:bg-indigo-600 active:scale-95 rounded-xl text-white transition"
-                    title="Steer Right (D or Right Arrow)"
                   >
                     <ArrowRight size={20} />
                   </button>
@@ -347,12 +374,11 @@ export default function App() {
                   </button>
                 </div>
               </div>
-
             </div>
           </div>
         )}
 
-        {/* SUMMARY SCREEN: OFFICIAL CLOSING DISCLOSURE */}
+        {/* SUMMARY SCREEN */}
         {game.stage === 'summary' && (
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl max-w-3xl mx-auto">
             <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
@@ -376,23 +402,23 @@ export default function App() {
             }`}>
               <div className="text-xs font-bold uppercase tracking-wider mb-1">Final Readiness Rating</div>
               <div className="text-2xl font-black text-white mb-1">
-                {game.cashReserves >= 3500 && '🏆 Grade A: Pro Homebuyer (Keys Unlocked!)'}
+                {game.cashReserves >= 3500 && '🏆 Grade A: Empowered Homebuyer (Keys Unlocked!)'}
                 {game.cashReserves >= 0 && game.cashReserves < 3500 && '⚠️ Grade C: Closed, But "House Poor"'}
                 {game.cashReserves < 0 && '❌ Grade F: Cash-to-Close Default'}
               </div>
               <p className="text-xs leading-relaxed">
                 {game.cashReserves >= 3500 &&
-                  `Incredible driving! You negotiated seller credits, protected your rate lock in traffic, funded your $4,200 Escrow tank, and kept $${game.cashReserves.toLocaleString()} in emergency reserves!`}
+                  `You applied the homebuying concepts, funded your $4,200 Escrow tank, and kept $${game.cashReserves.toLocaleString()} in emergency reserves!`}
                 {game.cashReserves >= 0 && game.cashReserves < 3500 &&
-                  `You made it to the closing table, but with only $${game.cashReserves.toLocaleString()} left in the bank, any surprise home repair will force you into debt.`}
+                  `You closed the deal, but with only $${game.cashReserves.toLocaleString()} left in the bank, any surprise home repair could force you into debt.`}
                 {game.cashReserves < 0 &&
-                  `You arrived $${Math.abs(game.cashReserves).toLocaleString()} short of the required Cash to Close. Avoid out-of-pocket potholes and cut your engine during underwriting delays!`}
+                  `You arrived $${Math.abs(game.cashReserves).toLocaleString()} short of the required Cash to Close. Review the Field Guide and try negotiating credits and cutting your engine in delays!`}
               </p>
             </div>
 
             <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 mb-6 space-y-2.5 max-h-72 overflow-y-auto">
               <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                Highway Closing Ledger & Real-World Takeaways
+                Itemized Closing Ledger & Decision Review
               </div>
               {game.history.map((h, i) => (
                 <div key={i} className="border-b border-slate-900 pb-2 last:border-none">
@@ -424,7 +450,7 @@ export default function App() {
                 onClick={handleReset}
                 className="py-4 px-6 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-2xl transition"
               >
-                Switch Vehicle / Loan
+                Review Tutorial / Switch Loan
               </button>
             </div>
           </div>
