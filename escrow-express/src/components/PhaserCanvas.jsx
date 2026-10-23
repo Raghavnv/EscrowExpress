@@ -5,19 +5,13 @@ class EscrowFOVScene extends Phaser.Scene {
   constructor() {
     super('EscrowFOVScene');
     this.speed = 0;
-    this.maxSpeed = 85;
+    this.maxSpeed = 90;
     this.distance = 0;
     this.targetDistance = 5000;
-    this.playerX = 0;
-    this.engineRunning = true;
+    this.playerX = 0; // -0.75 (Left), 0 (Center), +0.75 (Right)
+    this.turboActive = false;
     this.truckColor = 0xf43f5e;
-
-    this.inTrafficJam = false;
-    this.trafficCleared = false;
-    this.trafficTimer = 8;
     this.escrowCollected = false;
-    this.waivedInspectionTrap = false;
-    this.trapTriggered = false;
     this.finished = false;
     this.roadZ = 0;
     this.obstacles = [];
@@ -26,51 +20,49 @@ class EscrowFOVScene extends Phaser.Scene {
 
   create() {
     const { width } = this.scale;
-    this.horizonY = 125;
+    this.horizonY = 120;
 
-    // 1. Bright Sunny Cartoon Sky
+    // 1. Sunny Cartoon Sky
     const sky = this.add.graphics();
     sky.fillGradientStyle(0x38bdf8, 0x38bdf8, 0xbae6fd, 0xfef08a, 1);
     sky.fillRect(0, 0, width, this.horizonY);
 
-    // Bright Golden Sun
-    this.add.circle(width - 110, 48, 34, 0xfacc15, 1).setStrokeStyle(4, 0x18181b);
-
-    // Fluffy Cartoon Clouds
+    // Golden Sun & Fluffy Clouds
+    this.add.circle(width - 110, 46, 34, 0xfacc15, 1).setStrokeStyle(4, 0x18181b);
     this.clouds = [
       this.add.ellipse(140, 45, 95, 36, 0xffffff).setStrokeStyle(3, 0x18181b),
-      this.add.ellipse(420, 62, 120, 40, 0xffffff).setStrokeStyle(3, 0x18181b),
-      this.add.ellipse(620, 38, 85, 32, 0xffffff).setStrokeStyle(3, 0x18181b)
+      this.add.ellipse(420, 60, 120, 40, 0xffffff).setStrokeStyle(3, 0x18181b),
+      this.add.ellipse(640, 38, 85, 32, 0xffffff).setStrokeStyle(3, 0x18181b)
     ];
 
-    // Rolling Green Cartoon Hills on Horizon
+    // Rolling Green Hills
     const hills = this.add.graphics();
     hills.fillStyle(0x4ade80, 1);
     hills.lineStyle(3, 0x18181b, 1);
-    hills.fillEllipse(180, this.horizonY + 10, 380, 70);
-    hills.strokeEllipse(180, this.horizonY + 10, 380, 70);
+    hills.fillEllipse(190, this.horizonY + 10, 390, 70);
+    hills.strokeEllipse(190, this.horizonY + 10, 390, 70);
     hills.fillStyle(0x22c55e, 1);
     hills.fillEllipse(580, this.horizonY + 15, 460, 80);
     hills.strokeEllipse(580, this.horizonY + 15, 460, 80);
 
     this.worldGfx = this.add.graphics();
 
-    // Highway Overhead Signs (All styled like neutral classic road signs)
+    // Pool of 15 Sign Labels for 3-Lane Highway Gates
     this.labelPool = [];
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 15; i++) {
       const lbl = this.add.text(0, 0, '', {
         fontFamily: 'Space Grotesk, sans-serif',
-        fontSize: '12px',
+        fontSize: '11px',
         fontStyle: 'bold',
         color: '#18181b',
         backgroundColor: '#fef08a',
-        padding: { x: 8, y: 5 }
+        padding: { x: 6, y: 4 }
       }).setOrigin(0.5, 1).setVisible(false).setDepth(20);
       this.labelPool.push(lbl);
     }
 
-    // Pop-up Consequence Banner
-    this.floatingPopup = this.add.text(width / 2, 195, '', {
+    // Center Pop-up Banner after passing a gate
+    this.floatingPopup = this.add.text(width / 2, 190, '', {
       fontFamily: 'Fredoka, sans-serif',
       fontSize: '20px',
       fontStyle: 'bold',
@@ -89,135 +81,167 @@ class EscrowFOVScene extends Phaser.Scene {
       SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE
     });
 
-    this.keys.SPACE.on('down', () => this.toggleEngine());
+    this.keys.SPACE.on('down', () => this.toggleTurbo());
 
-    this.setupNeutralHighwayChoices();
+    this.setupFairThreeLaneCheckpoints();
 
-    // Spawn Colorful Roadside Suburban Houses & Trees
+    // Roadside Houses & Trees
     const houseColors = [0xf87171, 0x60a5fa, 0xfbbf24, 0xc084fc];
     for (let z = 90; z < 1800; z += 180) {
       this.scenery.push({ z, side: -1.65, type: 'house', color: houseColors[(z / 180) % 4] });
       this.scenery.push({ z: z + 90, side: 1.65, type: 'tree' });
     }
-
-    // 1-Second Timer for Underwriting Delay
-    this.time.addEvent({
-      delay: 1000,
-      loop: true,
-      callback: () => {
-        if (this.inTrafficJam && !this.trafficCleared && !this.finished) {
-          this.trafficTimer -= 1;
-          const burn = this.engineRunning ? 150 : 0;
-          if (this.onTrafficTick) {
-            this.onTrafficTick(this.trafficTimer, burn, this.engineRunning);
-          }
-          if (burn > 0) {
-            this.showPopup('-$150 RATE LOCK EXTENSION FEE!', '#fb7185');
-          } else {
-            this.showPopup('❄️ ENGINE OFF: $0 FEE BLEED!', '#38bdf8');
-          }
-
-          if (this.trafficTimer <= 0) {
-            this.trafficCleared = true;
-            this.inTrafficJam = false;
-            this.showPopup('🟢 TRAFFIC CLEARED! START ENGINE [SPACE]!', '#4ade80');
-            this.obstacles = this.obstacles.filter(o => o.type !== 'traffic_wall');
-            if (this.onTrafficCleared) this.onTrafficCleared();
-          }
-        }
-      }
-    });
   }
 
-  setupNeutralHighwayChoices() {
+  // Every checkpoint has 3 passable lanes (Left: -0.72, Center: 0, Right: +0.72)
+  // No full-road barriers that trap or force unavoidable losses!
+  setupFairThreeLaneCheckpoints() {
     this.obstacles = [
-      // Fork 1 (Mile 0.7): Home Inspection
+      // CHECKPOINT 1 (Mile 0.7): Home Inspection Findings
       {
-        z: 700, lane: -0.75, type: 'choice',
+        z: 750, lane: -0.72, type: 'choice',
         signText: '📋 WAIVE INSPECTION',
-        outcomeTitle: 'Waived Home Inspection ($0 Today)',
-        cost: 0,
-        setsTrap: true,
-        lesson: 'You paid $0 today by waiving the inspection—but any hidden plumbing or furnace defects are now your problem!'
+        outcomeTitle: 'Waived Inspection: Hidden Pipe Burst! (-$2,000)',
+        cost: -2000,
+        lesson: 'Waiving the inspection hid a cracked water main that cost $2,000 to fix!'
       },
       {
-        z: 700, lane: 0, type: 'choice',
-        signText: '🛠️ PAY CONTRACTOR DIRECT',
-        outcomeTitle: 'Paid Repairs Out-of-Pocket (-$2,400)',
-        cost: -2400,
-        lesson: 'Paying the contractor yourself fixed the roof, but drained $2,400 from your liquid Cash-to-Close tank.'
+        z: 750, lane: 0, type: 'choice',
+        signText: '🛠️ PAY CONTRACTOR',
+        outcomeTitle: 'Paid Roof Repair Yourself (-$1,000)',
+        cost: -1000,
+        lesson: 'You paid for the repair yourself instead of asking the seller for a credit.'
       },
       {
-        z: 700, lane: 0.75, type: 'choice',
-        signText: '🤝 REQUEST SELLER CREDIT',
-        outcomeTitle: 'Seller Credit Negotiated! (-$300 Re-Inspect)',
-        cost: -300,
-        lesson: 'Smart move! Using your Inspection Contingency, the seller credited $2,400 toward closing, costing you only a $300 re-inspection fee.'
+        z: 750, lane: 0.72, type: 'choice',
+        signText: '🤝 SELLER CREDIT',
+        outcomeTitle: 'Seller Repair Credit Approved! (+$1,500)',
+        cost: 1500,
+        lesson: 'Awesome! Your Inspection Contingency got the seller to credit $1,500 toward your closing costs!'
       },
 
-      // Fork 2 (Mile 1.5): Loan Estimate Form Review
+      // CHECKPOINT 2 (Mile 1.5): Reviewing the Loan Estimate Form
       {
-        z: 1500, lane: -0.65, type: 'choice',
-        signText: '⚡ EXPRESS COURIER PACKAGE',
-        outcomeTitle: 'Charged Padded "Junk Fee" (-$650)',
-        cost: -650,
-        lesson: '"Express Courier & Admin Package" is a classic lender Junk Fee! Always challenge padded admin charges on your Loan Estimate.'
+        z: 1500, lane: -0.72, type: 'choice',
+        signText: '⚡ EXPRESS COURIER FEE',
+        outcomeTitle: 'Paid Padded "Junk Fee" (-$1,200)',
+        cost: -1200,
+        lesson: '"Express Courier & Admin Package" is a padded lender Junk Fee you should always refuse!'
       },
       {
-        z: 1500, lane: 0.65, type: 'choice',
+        z: 1500, lane: 0, type: 'choice',
         signText: '🔍 AUDIT LOAN ESTIMATE',
-        outcomeTitle: 'Junk Fees Waived! (+$600 Saved)',
-        cost: 600,
-        lesson: 'Auditing your Loan Estimate line-by-line forced the lender to remove $600 in bogus processing fees!'
-      },
-
-      // Milestone (Mile 2.2): Underwriting Traffic Jam
-      { z: 2250, lane: -0.8, type: 'traffic_wall', signText: '🛑 UNDERWRITING TRAFFIC' },
-      { z: 2250, lane: 0, type: 'traffic_wall', signText: '🛑 PAPERWORK DELAY AHEAD' },
-      { z: 2250, lane: 0.8, type: 'traffic_wall', signText: '🛑 UNDERWRITING TRAFFIC' },
-
-      // Fork 3 (Mile 3.0): Low Home Appraisal
-      {
-        z: 3050, lane: -0.65, type: 'choice',
-        signText: '💵 PAY APPRAISAL DIFFERENCE',
-        outcomeTitle: 'Paid Appraisal Gap in Cash (-$2,500)',
-        cost: -2500,
-        lesson: 'Paying the Appraisal Gap out-of-pocket kept the deal alive, but took a $2,500 bite out of your cash reserves.'
+        outcomeTitle: 'Audited Form & Removed Junk Fees! (+$1,200)',
+        cost: 1200,
+        lesson: 'Spot on! Reviewing your 3-page Loan Estimate removed $1,200 in bogus processing fees!'
       },
       {
-        z: 3050, lane: 0.65, type: 'choice',
-        signText: '📊 APPEAL WITH COMP SALES',
-        outcomeTitle: 'Comps Appeal Accepted! (-$200 Filing)',
-        cost: -200,
-        lesson: 'Submitting comparable neighborhood sales ("Comps") justified the price and saved you from paying a $2,500 gap!'
+        z: 1500, lane: 0.72, type: 'choice',
+        signText: '📄 ACCEPT ESTIMATE AS-IS',
+        outcomeTitle: 'Paid Standard Processing (-$400)',
+        cost: -400,
+        lesson: 'Signing without auditing left minor administrative fees on your tab.'
       },
 
-      // Milestone (Mile 3.8): Mandatory Escrow Weigh Station
+      // CHECKPOINT 3 (Mile 2.3): Interest Rate & Underwriting Zone (Replaces the broken Traffic Wall!)
       {
-        z: 3850, lane: 0, type: 'escrow_arch',
-        signText: '⚖️ ESCROW WEIGH STATION (PREPAID TAX & INSURANCE)'
+        z: 2300, lane: -0.72, type: 'choice',
+        signText: '🔒 30-DAY RATE LOCK',
+        outcomeTitle: 'Rate Locked Before Market Spike! (+$1,400)',
+        cost: 1400,
+        lesson: 'Smart! Locking your interest rate protected your cash when market rates jumped during underwriting!'
       },
-
-      // Fork 4 (Mile 4.5): Closing Wire Transfer
       {
-        z: 4500, lane: -0.65, type: 'choice',
-        signText: '📧 USE EMAILED WIRE LINK',
-        outcomeTitle: 'Wire Fraud Spoof Penalty! (-$1,800)',
+        z: 2300, lane: 0, type: 'choice',
+        signText: '📈 FLOAT INTEREST RATE',
+        outcomeTitle: 'Rates Spiked While Floating! (-$1,800)',
         cost: -1800,
-        lesson: 'Never trust sudden emailed wire instructions! Wire scammers target homebuyers right before closing day.'
+        lesson: 'Floating your rate left you exposed when interest rates rose during underwriting!'
       },
       {
-        z: 4500, lane: 0.65, type: 'choice',
-        signText: '📞 CALL TITLE OFFICER DIRECT',
-        outcomeTitle: 'Verified Safe Wire + Earnest Credit (+$500)',
-        cost: 500,
-        lesson: 'Calling the Title Office directly verified safe routing and applied your Earnest Money deposit credit!'
+        z: 2300, lane: 0.72, type: 'choice',
+        signText: '⏳ DELAY PAPERWORK',
+        outcomeTitle: 'Paid Rate-Lock Extension Fee (-$900)',
+        cost: -900,
+        lesson: 'Delaying your bank documents forced you to pay a daily Rate-Lock Extension fee.'
       },
 
-      // Finish Line (Mile 5.0)
+      // CHECKPOINT 4 (Mile 3.1): Home Appraisal Came in $5k Low
+      {
+        z: 3100, lane: -0.72, type: 'choice',
+        signText: '💵 PAY APPRAISAL GAP',
+        outcomeTitle: 'Paid Appraisal Shortage in Cash (-$1,800)',
+        cost: -1800,
+        lesson: 'Paying the appraisal gap out of pocket drained your cash reserves.'
+      },
+      {
+        z: 3100, lane: 0, type: 'choice',
+        signText: '🏃 CANCEL WITHOUT CONTINGENCY',
+        outcomeTitle: 'Forfeited Partial Deposit (-$2,200)',
+        cost: -2200,
+        lesson: 'Backing out without an Appraisal Contingency puts your earnest deposit at risk!'
+      },
+      {
+        z: 3100, lane: 0.72, type: 'choice',
+        signText: '📊 APPEAL WITH COMPS',
+        outcomeTitle: 'Neighborhood Comps Appeal Won! (+$1,200)',
+        cost: 1200,
+        lesson: 'Great move! Submitting recent neighborhood sales ("Comps") proved the home value and saved your cash!'
+      },
+
+      // CHECKPOINT 5 (Mile 3.9): Escrow Reserve Station (Replaces the unavoidable -$4,200 rail!)
+      {
+        z: 3900, lane: -0.72, type: 'choice',
+        signText: '🏦 ESCROW + SELLER TAX CREDIT',
+        outcomeTitle: 'Escrow Funded + Seller Tax Proration! (+$1,000)',
+        cost: 1000,
+        fillsEscrow: true,
+        lesson: 'Pro move! You funded your Escrow Reserve AND collected the seller’s unpaid property tax proration credit!'
+      },
+      {
+        z: 3900, lane: 0, type: 'choice',
+        signText: '💼 PREPAY FULL YEAR SOLO',
+        outcomeTitle: 'Escrow Funded Out-of-Pocket (-$800)',
+        cost: -800,
+        fillsEscrow: true,
+        lesson: 'You funded your 6-month tax & 12-month insurance Escrow tank, though you didn’t claim seller tax credits.'
+      },
+      {
+        z: 3900, lane: 0.72, type: 'choice',
+        signText: '🚫 SKIP HAZARD INSURANCE',
+        outcomeTitle: 'Lender Force-Placed Insurance Penalty! (-$2,400)',
+        cost: -2400,
+        fillsEscrow: true,
+        lesson: 'Never skip homeowners insurance! The bank forced expensive coverage onto your loan at closing.'
+      },
+
+      // CHECKPOINT 6 (Mile 4.5): Final Closing Wire Transfer
+      {
+        z: 4550, lane: -0.72, type: 'choice',
+        signText: '📧 USE EMAILED WIRE LINK',
+        outcomeTitle: 'Wire Phishing Scam Penalty! (-$2,200)',
+        cost: -2200,
+        lesson: 'Never trust last-minute emailed wire changes! Always call the Title Office directly to verify routing numbers.'
+      },
+      {
+        z: 4550, lane: 0, type: 'choice',
+        signText: '📞 CALL TITLE OFFICE DIRECT',
+        outcomeTitle: 'Verified Safe Wire + Earnest Credit! (+$1,000)',
+        cost: 1000,
+        lesson: 'Calling the Title Officer verified your safe wire and applied your Earnest Money deposit credit!'
+      },
+      {
+        z: 4550, lane: 0.72, type: 'choice',
+        signText: '📝 BRING PERSONAL CHECK',
+        outcomeTitle: 'Personal Check Rejected — Rush Wire Fee (-$600)',
+        cost: -600,
+        lesson: 'Closing requires a Certified Cashier’s Check or verified wire transfer—personal checks delay funding!'
+      },
+
+      // FINISH LINE (Mile 5.0)
       {
         z: 5000, lane: 0, type: 'finish_arch',
-        signText: '🏁 COUNTY TITLE OFFICE — GET YOUR KEYS!'
+        signText: '🏁 COUNTY TITLE OFFICE — CLOSING DAY!'
       }
     ];
   }
@@ -227,20 +251,21 @@ class EscrowFOVScene extends Phaser.Scene {
     this.floatingPopup.setText(text);
     this.floatingPopup.setColor(color);
     this.floatingPopup.setAlpha(1);
-    this.floatingPopup.y = 195;
+    this.floatingPopup.y = 190;
     this.tweens.killTweensOf(this.floatingPopup);
     this.tweens.add({
       targets: this.floatingPopup,
-      y: 145,
+      y: 140,
       alpha: 0,
       duration: 2400,
       ease: 'Cubic.easeOut'
     });
   }
 
-  toggleEngine() {
-    this.engineRunning = !this.engineRunning;
-    this.showPopup(this.engineRunning ? '🔥 ENGINE ON!' : '❄️ ENGINE CUT OFF!', this.engineRunning ? '#4ade80' : '#38bdf8');
+  toggleTurbo() {
+    this.turboActive = !this.turboActive;
+    this.maxSpeed = this.turboActive ? 115 : 85;
+    this.showPopup(this.turboActive ? '⚡ TURBO CRUISE ON!' : '🚗 STANDARD CRUISE', '#facc15');
     this.emitTelemetry();
   }
 
@@ -254,9 +279,7 @@ class EscrowFOVScene extends Phaser.Scene {
       this.onTelemetryUpdate({
         speed: Math.round(this.speed),
         distance: Math.min(this.targetDistance, Math.round(this.distance)),
-        engineRunning: this.engineRunning,
-        inTrafficJam: this.inTrafficJam,
-        trafficTimer: this.trafficTimer
+        turboActive: this.turboActive
       });
     }
   }
@@ -266,7 +289,6 @@ class EscrowFOVScene extends Phaser.Scene {
     const dt = delta / 1000;
     const vInput = this.virtualInput || {};
 
-    // Drift clouds gently
     this.clouds.forEach((c, idx) => {
       c.x += (8 + idx * 4) * dt;
       if (c.x > this.scale.width + 70) c.x = -70;
@@ -277,16 +299,12 @@ class EscrowFOVScene extends Phaser.Scene {
     const left = this.cursors.left.isDown || this.keys.A.isDown || vInput.left;
     const right = this.cursors.right.isDown || this.keys.D.isDown || vInput.right;
 
-    if (this.engineRunning && up && !this.inTrafficJam) {
-      this.speed = Math.min(this.maxSpeed, this.speed + 52 * dt);
+    if (up) {
+      this.speed = Math.min(this.maxSpeed, this.speed + 55 * dt);
     } else if (down) {
       this.speed = Math.max(0, this.speed - 95 * dt);
     } else {
-      this.speed = Math.max(0, this.speed - 24 * dt);
-    }
-
-    if (this.inTrafficJam && !this.trafficCleared) {
-      this.speed = 0;
+      this.speed = Math.max(0, this.speed - 22 * dt);
     }
 
     let steerDir = 0;
@@ -294,47 +312,12 @@ class EscrowFOVScene extends Phaser.Scene {
     if (right) steerDir = 1;
 
     if (this.speed > 2) {
-      this.playerX = Phaser.Math.Clamp(this.playerX + steerDir * 1.45 * dt, -1.05, 1.05);
+      this.playerX = Phaser.Math.Clamp(this.playerX + steerDir * 1.55 * dt, -1.0, 1.0);
     }
 
-    const distDelta = this.speed * 4.2 * dt;
+    const distDelta = this.speed * 4.3 * dt;
     this.distance += distDelta;
     this.roadZ += distDelta;
-
-    // Delayed Furnace Trap at Mile 4.2 if Inspection was Waived
-    if (this.waivedInspectionTrap && !this.trapTriggered && this.distance >= 4150) {
-      this.trapTriggered = true;
-      this.cameras.main.shake(350, 0.02);
-      this.showPopup('💥 UNINSPECTED FURNACE EXPLODED! (-$3,200)', '#fb7185');
-      if (this.onObstacleHit) {
-        this.onObstacleHit({
-          cost: -3200,
-          title: 'Delayed Trap: Uninspected Furnace Failed (-$3,200)',
-          lesson: 'Because you waived the Home Inspection at Mile 0.7, a broken furnace went unnoticed and cost you $3,200 right before closing!'
-        });
-      }
-    }
-
-    // Approaching Underwriting Traffic at Mile 2.2
-    if (!this.trafficCleared && !this.inTrafficJam && this.distance >= 2110 && this.distance < 2260) {
-      if (this.speed > 45 && this.distance >= 2190) {
-        this.speed = 0;
-        this.inTrafficJam = true;
-        this.cameras.main.shake(300, 0.02);
-        this.showPopup('💥 REAR-ENDED UNDERWRITING TRAFFIC! (-$1,000)', '#fb7185');
-        if (this.onObstacleHit) {
-          this.onObstacleHit({
-            cost: -1000,
-            title: 'Crashed into Underwriting Backlog (-$1,000 Rush Fee)',
-            lesson: 'You didn’t brake in time! Now you’re stuck in underwriting traffic—remember how to stop your Rate Lock from burning fees!'
-          });
-        }
-      } else if (this.distance >= 2165) {
-        this.speed = 0;
-        this.inTrafficJam = true;
-        this.showPopup('🛑 STUCK IN UNDERWRITING TRAFFIC!', '#facc15');
-      }
-    }
 
     this.render3DWorld(steerDir, time);
     this.emitTelemetry();
@@ -347,7 +330,7 @@ class EscrowFOVScene extends Phaser.Scene {
     const perspective = 1 / (1 + normalizedZ * 4.5);
 
     const screenY = this.horizonY + (height - this.horizonY) * perspective;
-    const roadHalfWidth = 32 + 350 * perspective;
+    const roadHalfWidth = 34 + 355 * perspective;
     const screenX = width / 2 + laneX * roadHalfWidth;
 
     return { screenX, screenY, scale: perspective, roadHalfWidth };
@@ -361,7 +344,7 @@ class EscrowFOVScene extends Phaser.Scene {
     this.labelPool.forEach(l => l.setVisible(false));
     let labelIdx = 0;
 
-    // 1. Sunny Grass & Cartoon Road Slices
+    // 1. Road Perspective Slices
     const slices = 28;
     for (let i = slices - 1; i >= 0; i--) {
       const zNear = (i / slices) * 700;
@@ -370,11 +353,9 @@ class EscrowFOVScene extends Phaser.Scene {
       const pFar = this.project3D(0, zFar);
       const stripePhase = Math.floor((this.roadZ + zNear) / 45) % 2 === 0;
 
-      // Bright Lawn Grass
       gfx.fillStyle(stripePhase ? 0x86efac : 0x4ade80, 1);
       gfx.fillRect(0, pFar.screenY, width, pNear.screenY - pFar.screenY + 1);
 
-      // Festive Red & White Rumble Strips
       const curbNear = pNear.roadHalfWidth * 1.09;
       const curbFar = pFar.roadHalfWidth * 1.09;
       gfx.fillStyle(stripePhase ? 0xf43f5e : 0xffffff, 1);
@@ -385,7 +366,6 @@ class EscrowFOVScene extends Phaser.Scene {
         { x: width / 2 - curbNear, y: pNear.screenY }
       ], true);
 
-      // Clean Asphalt Road
       gfx.fillStyle(stripePhase ? 0x334155 : 0x1e293b, 1);
       gfx.fillPoints([
         { x: width / 2 - pFar.roadHalfWidth, y: pFar.screenY },
@@ -394,10 +374,9 @@ class EscrowFOVScene extends Phaser.Scene {
         { x: width / 2 - pNear.roadHalfWidth, y: pNear.screenY }
       ], true);
 
-      // Lane Dividers
       if (stripePhase) {
         gfx.fillStyle(0xfef08a, 0.95);
-        [-0.35, 0.35].forEach(laneDiv => {
+        [-0.36, 0.36].forEach(laneDiv => {
           const xNear = width / 2 + laneDiv * pNear.roadHalfWidth;
           const wNear = Math.max(2, 5 * pNear.scale);
           gfx.fillRect(xNear - wNear / 2, pFar.screenY, wNear, pNear.screenY - pFar.screenY);
@@ -405,7 +384,7 @@ class EscrowFOVScene extends Phaser.Scene {
       }
     }
 
-    // 2. Render Cute Suburban Houses & Trees Along the Road
+    // 2. Roadside Houses & Trees
     this.scenery.forEach(item => {
       let relZ = (item.z - (this.roadZ % 1800) + 1800) % 1800;
       if (relZ > 15 && relZ < 680) {
@@ -413,12 +392,10 @@ class EscrowFOVScene extends Phaser.Scene {
         if (item.type === 'house') {
           const hw = 70 * proj.scale;
           const hh = 50 * proj.scale;
-          // House walls
           gfx.fillStyle(item.color, 1);
           gfx.lineStyle(2 * proj.scale, 0x18181b, 1);
           gfx.fillRect(proj.screenX - hw / 2, proj.screenY - hh, hw, hh);
           gfx.strokeRect(proj.screenX - hw / 2, proj.screenY - hh, hw, hh);
-          // Pitched Roof
           gfx.fillStyle(0x18181b, 1);
           gfx.fillTriangle(
             proj.screenX - hw * 0.6, proj.screenY - hh,
@@ -426,7 +403,6 @@ class EscrowFOVScene extends Phaser.Scene {
             proj.screenX, proj.screenY - hh * 1.55
           );
         } else {
-          // Cartoon Tree
           const trunkH = 35 * proj.scale;
           gfx.fillStyle(0x78350f, 1);
           gfx.fillRect(proj.screenX - 5 * proj.scale, proj.screenY - trunkH, 10 * proj.scale, trunkH);
@@ -438,7 +414,7 @@ class EscrowFOVScene extends Phaser.Scene {
       }
     });
 
-    // 3. Render Neutral Highway Decision Gates
+    // 3. Render 3-Lane Checkpoints & Finish Arch
     const visibleObstacles = this.obstacles
       .map(obs => ({ ...obs, relZ: obs.z - this.distance }))
       .filter(obs => obs.relZ > -25 && obs.relZ < 680)
@@ -446,16 +422,15 @@ class EscrowFOVScene extends Phaser.Scene {
 
     visibleObstacles.forEach(obs => {
       const proj = this.project3D(obs.lane, Math.max(5, obs.relZ));
-      const w = 96 * proj.scale;
-      const h = 54 * proj.scale;
+      const w = 88 * proj.scale;
+      const h = 48 * proj.scale;
 
-      if (obs.type === 'escrow_arch' || obs.type === 'finish_arch') {
+      if (obs.type === 'finish_arch') {
         const leftPost = this.project3D(-1.05, Math.max(5, obs.relZ));
         const rightPost = this.project3D(1.05, Math.max(5, obs.relZ));
         const archHeight = 130 * proj.scale;
-        const archColor = obs.type === 'escrow_arch' ? 0x38bdf8 : 0xfacc15;
 
-        gfx.fillStyle(archColor, 1);
+        gfx.fillStyle(0xfacc15, 1);
         gfx.lineStyle(3 * proj.scale, 0x18181b, 1);
         gfx.fillRect(leftPost.screenX - 8 * proj.scale, proj.screenY - archHeight, 16 * proj.scale, archHeight);
         gfx.fillRect(rightPost.screenX - 8 * proj.scale, proj.screenY - archHeight, 16 * proj.scale, archHeight);
@@ -470,56 +445,67 @@ class EscrowFOVScene extends Phaser.Scene {
           lbl.setVisible(true);
         }
       } else {
-        // Neutral Highway Sign (Identical Gold/White Sign Style for all choices!)
-        const gateColor = obs.type === 'traffic_wall' ? 0xf43f5e : 0xffffff;
-        gfx.fillStyle(gateColor, 0.96);
+        // Drive-Through Overhead Highway Gate Posts (Looks like a toll lane you drive under, NOT a solid wall!)
+        gfx.fillStyle(0xffffff, 0.95);
         gfx.lineStyle(3 * proj.scale, 0x18181b, 1);
-        gfx.fillRoundedRect(proj.screenX - w / 2, proj.screenY - h, w, h, 8 * proj.scale);
-        gfx.strokeRoundedRect(proj.screenX - w / 2, proj.screenY - h, w, h, 8 * proj.scale);
+        // Left & Right thin support pillars for the lane gate
+        gfx.fillRect(proj.screenX - w / 2, proj.screenY - h * 1.3, 6 * proj.scale, h * 1.3);
+        gfx.fillRect(proj.screenX + w / 2 - 6 * proj.scale, proj.screenY - h * 1.3, 6 * proj.scale, h * 1.3);
+        // Overhead Sign Banner
+        gfx.fillRoundedRect(proj.screenX - w / 2, proj.screenY - h * 1.45, w, h * 0.55, 6 * proj.scale);
+        gfx.strokeRoundedRect(proj.screenX - w / 2, proj.screenY - h * 1.45, w, h * 0.55, 6 * proj.scale);
 
-        if (labelIdx < this.labelPool.length && obs.relZ < 520) {
+        if (labelIdx < this.labelPool.length && obs.relZ < 540) {
           const lbl = this.labelPool[labelIdx++];
           lbl.setText(obs.signText);
-          lbl.setPosition(proj.screenX, proj.screenY - h - 4);
-          lbl.setScale(Math.max(0.55, Math.min(1.05, proj.scale * 1.25)));
+          lbl.setPosition(proj.screenX, proj.screenY - h * 1.48);
+          lbl.setScale(Math.max(0.5, Math.min(1.0, proj.scale * 1.2)));
           lbl.setVisible(true);
         }
       }
 
-      // Collision Check
-      if (!obs.hit && obs.relZ <= 42 && obs.relZ >= -10) {
-        if (obs.type === 'escrow_arch') {
-          obs.hit = true;
-          this.escrowCollected = true;
-          this.showPopup('⚖️ $4,200 LOADED INTO ESCROW TANK!', '#38bdf8');
-          if (this.onEscrowCheckpoint) this.onEscrowCheckpoint();
-        } else if (obs.type === 'finish_arch') {
+      // Collision Check: When truck passes through the checkpoint Z
+      if (!obs.hit && obs.relZ <= 38 && obs.relZ >= -15) {
+        if (obs.type === 'finish_arch') {
           obs.hit = true;
           this.finished = true;
           this.speed = 0;
           if (this.onFinishLine) this.onFinishLine();
-        } else if (obs.type === 'choice' && Math.abs(this.playerX - obs.lane) < 0.44) {
-          obs.hit = true;
-          this.obstacles.forEach(other => {
-            if (Math.abs(other.z - obs.z) < 20) other.hit = true;
-          });
-
-          if (obs.setsTrap) {
-            this.waivedInspectionTrap = true;
-          }
-
-          const popColor = obs.cost < -500 ? '#fb7185' : obs.cost > 0 ? '#4ade80' : '#facc15';
-          if (obs.cost < -500) {
-            this.cameras.main.shake(200, 0.012);
-          }
-          this.showPopup(obs.outcomeTitle, popColor);
-
-          if (this.onObstacleHit) {
-            this.onObstacleHit({
-              cost: obs.cost,
-              title: obs.outcomeTitle,
-              lesson: obs.lesson
+        } else if (obs.type === 'choice') {
+          // Find whichever lane gate at this Z milestone is closest to the player's current lane!
+          const sameRow = this.obstacles.filter(o => Math.abs(o.z - obs.z) < 20 && !o.hit);
+          if (sameRow.length > 0) {
+            let chosenGate = sameRow[0];
+            let minDist = Math.abs(this.playerX - chosenGate.lane);
+            sameRow.forEach(candidate => {
+              const d = Math.abs(this.playerX - candidate.lane);
+              if (d < minDist) {
+                minDist = d;
+                chosenGate = candidate;
+              }
             });
+
+            // Mark entire row as resolved so only the chosen lane triggers
+            sameRow.forEach(o => { o.hit = true; });
+
+            if (chosenGate.fillsEscrow) {
+              this.escrowCollected = true;
+              if (this.onEscrowCheckpoint) this.onEscrowCheckpoint();
+            }
+
+            const popColor = chosenGate.cost < 0 ? '#fb7185' : '#4ade80';
+            if (chosenGate.cost < -800) {
+              this.cameras.main.shake(180, 0.01);
+            }
+            this.showPopup(chosenGate.outcomeTitle, popColor);
+
+            if (this.onObstacleHit) {
+              this.onObstacleHit({
+                cost: chosenGate.cost,
+                title: chosenGate.outcomeTitle,
+                lesson: chosenGate.lesson
+              });
+            }
           }
         }
       }
@@ -531,30 +517,25 @@ class EscrowFOVScene extends Phaser.Scene {
   drawPlayerTruck(gfx, steerDir, time) {
     const { width, height } = this.scale;
     const truckScreenX = width / 2 + this.playerX * 210;
-    const bounce = this.speed > 2 ? Math.sin(time * 0.04) * 3 : (this.engineRunning ? Math.sin(time * 0.08) * 1 : 0);
+    const bounce = this.speed > 2 ? Math.sin(time * 0.04) * 3 : 0;
     const truckY = height - 26 + bounce;
     const tilt = steerDir * 4.5;
 
-    // Shadow
     gfx.fillStyle(0x000000, 0.35);
     gfx.fillEllipse(truckScreenX, height - 14, 134, 22);
 
-    // Chunky Cartoon Tires
     gfx.fillStyle(0x18181b, 1);
     gfx.fillRoundedRect(truckScreenX - 60, truckY - 20, 24, 26, 6);
     gfx.fillRoundedRect(truckScreenX + 36, truckY - 20, 24, 26, 6);
 
-    // Truck Body with Thick Comic Ink Border
     gfx.fillStyle(this.truckColor, 1);
     gfx.lineStyle(4, 0x18181b, 1);
     gfx.fillRoundedRect(truckScreenX - 56 + tilt, truckY - 86, 112, 70, 10);
     gfx.strokeRoundedRect(truckScreenX - 56 + tilt, truckY - 86, 112, 70, 10);
 
-    // White Roof Cap
     gfx.fillStyle(0xffffff, 0.9);
     gfx.fillRoundedRect(truckScreenX - 52 + tilt, truckY - 84, 104, 14, 4);
 
-    // Escrow Glass Tank Window on Back of Truck
     gfx.fillStyle(0x18181b, 1);
     gfx.fillRoundedRect(truckScreenX - 40 + tilt, truckY - 62, 80, 28, 6);
     if (this.escrowCollected) {
@@ -562,8 +543,7 @@ class EscrowFOVScene extends Phaser.Scene {
       gfx.fillRoundedRect(truckScreenX - 36 + tilt, truckY - 58, 72, 20, 4);
     }
 
-    // Brake Lights
-    const braking = this.cursors?.down?.isDown || this.keys?.S?.isDown || this.inTrafficJam;
+    const braking = this.cursors?.down?.isDown || this.keys?.S?.isDown;
     gfx.fillStyle(braking ? 0xff0000 : 0xfbbf24, 1);
     gfx.lineStyle(2, 0x18181b, 1);
     gfx.fillRect(truckScreenX - 48 + tilt, truckY - 26, 18, 8);
@@ -577,8 +557,6 @@ export default function PhaserCanvas({
   truckColor,
   onTelemetryUpdate,
   onObstacleHit,
-  onTrafficTick,
-  onTrafficCleared,
   onEscrowCheckpoint,
   onFinishLine,
   sceneControlRef
@@ -593,8 +571,6 @@ export default function PhaserCanvas({
     scene.truckColor = truckColor || 0xf43f5e;
     scene.onTelemetryUpdate = onTelemetryUpdate;
     scene.onObstacleHit = onObstacleHit;
-    scene.onTrafficTick = onTrafficTick;
-    scene.onTrafficCleared = onTrafficCleared;
     scene.onEscrowCheckpoint = onEscrowCheckpoint;
     scene.onFinishLine = onFinishLine;
 
@@ -615,7 +591,7 @@ export default function PhaserCanvas({
 
     if (sceneControlRef) {
       sceneControlRef.current = {
-        toggleEngine: () => scene.toggleEngine(),
+        toggleTurbo: () => scene.toggleTurbo(),
         setInput: (dir, val) => scene.setControlInput(dir, val),
       };
     }

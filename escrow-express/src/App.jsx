@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Truck, ShieldAlert, DollarSign, Gauge, Power, RotateCcw,
+  Truck, ShieldAlert, DollarSign, Gauge, Zap, RotateCcw,
   User, Radio, Trophy, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, BookOpen, X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import PhaserCanvas from './components/PhaserCanvas';
 import OnboardingFlow from './components/OnboardingFlow';
 
-const STORAGE_KEY = 'nest_navigate_arcade_v5';
+const STORAGE_KEY = 'nest_navigate_arcade_v6';
 
 const INITIAL_GAME = {
   stage: 'onboarding',
   profile: null,
-  cashReserves: 11500,
+  cashReserves: 12000,
   escrowFunded: 0,
   escrowRequired: 4200,
   history: [],
@@ -33,14 +33,12 @@ export default function App() {
   const [telemetry, setTelemetry] = useState({
     speed: 0,
     distance: 0,
-    engineRunning: true,
-    inTrafficJam: false,
-    trafficTimer: 8
+    turboActive: false
   });
 
   const [radioMessage, setRadioMessage] = useState({
-    title: 'CB RADIO: HOLD [W / ▲] TO HIT THE ROAD!',
-    desc: 'Read the yellow highway signs carefully and steer [A/D or ◀/▶] into the smart financial lane!'
+    title: 'CB RADIO: HOLD [W / ▲] TO HIT THE HIGHWAY!',
+    desc: 'Steer with [A/D or ◀/▶] through the 6 overhead highway checkpoints! Pick the smart financial lane at each fork!'
   });
 
   const sceneControlRef = useRef(null);
@@ -50,21 +48,14 @@ export default function App() {
   }, [game]);
 
   const handleStartNewGame = (profileData) => {
-    const startCash = profileData.startingCash - 1800 - profileData.pmiPenalty;
+    const startCash = profileData.startingCash - profileData.pmiPenalty;
     const startHistory = [
       {
-        item: 'Lender Origination & Appraisal Fee',
-        cost: -1800,
-        lesson: 'Standard upfront lender processing & appraisal fees charged on every mortgage.'
+        item: 'Starting Cash-to-Close Reserve Tank',
+        cost: startCash,
+        lesson: 'Your initial liquid savings ready for closing day milestones.'
       }
     ];
-    if (profileData.pmiPenalty > 0) {
-      startHistory.push({
-        item: 'FHA Upfront Mortgage Insurance (UFMIP)',
-        cost: -profileData.pmiPenalty,
-        lesson: 'Low-down-payment FHA loans deduct an upfront insurance fee at closing.'
-      });
-    }
 
     setGame({
       stage: 'playing',
@@ -77,7 +68,7 @@ export default function App() {
 
     setRadioMessage({
       title: 'MOVING DAY STARTED — HOLD [W / ▲] TO DRIVE!',
-      desc: 'Lender Origination Fees (-$1,800) were deducted. Watch the yellow road signs ahead—none are color-coded, so use what you learned!'
+      desc: 'Watch the 3-lane overhead arches ahead! Steer Left, Center, or Right based on what you learned in the Field Manual!'
     });
   };
 
@@ -90,52 +81,15 @@ export default function App() {
     setRadioMessage({ title, desc: lesson });
   };
 
-  const handleTrafficTick = (timeLeft, burnAmount, engineOn) => {
-    if (burnAmount > 0) {
-      setGame((prev) => ({
-        ...prev,
-        cashReserves: prev.cashReserves - burnAmount
-      }));
-    }
-    setRadioMessage({
-      title: engineOn
-        ? `🚨 UNDERWRITING DELAY (${timeLeft}s): BURNING -$150/SEC!`
-        : `❄️ ENGINE OFF (${timeLeft}s LEFT): RATE LOCK PAUSED!`,
-      desc: engineOn
-        ? 'Your 30-day Rate Lock is expiring in traffic! Remember how to stop daily extension fees?'
-        : 'Awesome! Cutting your engine froze your Rate Lock so you lose $0 while waiting.'
-    });
-  };
-
-  const handleTrafficCleared = () => {
-    setRadioMessage({
-      title: '🟢 UNDERWRITING CLEARED! RESTART ENGINE [SPACE] & DRIVE!',
-      desc: 'Turn your engine back on and hold [W / ▲] to reach the Escrow Weigh Station at Mile 3.8!'
-    });
-  };
-
   const handleEscrowCheckpoint = () => {
     setGame((prev) => ({
       ...prev,
-      cashReserves: prev.cashReserves - prev.escrowRequired,
-      escrowFunded: prev.escrowRequired,
-      history: [
-        ...prev.history,
-        {
-          item: 'Escrow Weigh Station: 6 Mos Taxes + 12 Mos Insurance',
-          cost: -4200,
-          lesson: 'Lenders require you to prepay property taxes ($2,400) and hazard insurance ($1,800) into an Escrow Reserve account.'
-        }
-      ]
+      escrowFunded: prev.escrowRequired
     }));
-    setRadioMessage({
-      title: '⚖️ ESCROW TANK FILLED (-$4,200)!',
-      desc: '6 months of taxes and 12 months of hazard insurance are locked in your Escrow Trailer. Sprint to the Title Office!'
-    });
   };
 
   const handleFinishLine = () => {
-    confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
+    confetti({ particleCount: 160, spread: 90, origin: { y: 0.6 } });
     setGame((prev) => ({ ...prev, stage: 'summary' }));
   };
 
@@ -149,7 +103,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col select-none pb-8">
-      {/* Festive Top Arcade Bar */}
+      {/* Top Arcade Bar */}
       <header className="bg-amber-300 border-b-4 border-zinc-900 px-4 sm:px-8 py-3 flex items-center justify-between sticky top-0 z-30 shadow-md">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-rose-500 rounded-xl text-white border-2 border-zinc-900 shadow-[2px_2px_0px_#18181B]">
@@ -189,41 +143,45 @@ export default function App() {
         </div>
       </header>
 
-      {/* Field Manual Pop-up Modal */}
+      {/* Field Manual Modal */}
       {showGlossaryModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="arcade-card bg-amber-50 rounded-3xl max-w-lg w-full p-6">
             <div className="flex items-center justify-between border-b-3 border-zinc-900 pb-3 mb-4">
               <h3 className="font-display text-xl font-bold text-zinc-900 flex items-center gap-2">
-                <BookOpen size={20} className="text-rose-500" /> Pocket Homebuyer Manual
+                <BookOpen size={20} className="text-rose-500" /> Pocket Homebuyer Cheat-Sheet
               </h3>
               <button onClick={() => setShowGlossaryModal(false)} className="arcade-btn bg-rose-400 text-white p-1.5 rounded-lg">
                 <X size={18} />
               </button>
             </div>
-            <div className="space-y-3 text-xs font-medium text-zinc-800 max-h-80 overflow-y-auto pr-1">
+            <div className="space-y-2.5 text-xs font-medium text-zinc-800 max-h-80 overflow-y-auto pr-1">
               <div className="p-3 bg-white border-2 border-zinc-900 rounded-xl">
-                <strong className="text-rose-600 block text-sm">Inspection & Seller Credits:</strong>
-                Ask the seller for a Closing Credit to cover repairs instead of paying out-of-pocket or risking uninspected defects!
+                <strong className="text-rose-600 block text-sm">1. Home Inspection:</strong>
+                Request a <strong>Seller Credit</strong> so the seller pays for defects rather than waiving inspection or paying out of pocket.
               </div>
               <div className="p-3 bg-white border-2 border-zinc-900 rounded-xl">
-                <strong className="text-sky-600 block text-sm">Loan Estimate Audit vs. Junk Fees:</strong>
-                Audit your Loan Estimate to remove padded "Express Courier" junk fees.
+                <strong className="text-sky-600 block text-sm">2. Loan Estimate Review:</strong>
+                <strong>Audit your Loan Estimate</strong> to strip out padded "Express Courier" junk fees.
               </div>
               <div className="p-3 bg-white border-2 border-zinc-900 rounded-xl">
-                <strong className="text-amber-600 block text-sm">Underwriting & Rate Lock:</strong>
-                Cut your engine [SPACEBAR] during traffic delays so your 30-day Rate Lock doesn’t burn daily extension fees!
+                <strong className="text-amber-600 block text-sm">3. Interest Rate Volatility:</strong>
+                Choose a <strong>30-Day Rate Lock</strong> so market interest spikes don't raise your costs during underwriting.
               </div>
               <div className="p-3 bg-white border-2 border-zinc-900 rounded-xl">
-                <strong className="text-emerald-600 block text-sm">Appraisal Comps Appeal:</strong>
-                Use neighborhood Comparable Sales ("Comps") to appeal a low appraisal instead of paying the gap in cash.
+                <strong className="text-emerald-600 block text-sm">4. Low Appraisal:</strong>
+                <strong>Appeal with Comps</strong> (comparable neighborhood sales) instead of paying the appraisal gap in cash.
+              </div>
+              <div className="p-3 bg-white border-2 border-zinc-900 rounded-xl">
+                <strong className="text-purple-600 block text-sm">5. Escrow & Closing Wire:</strong>
+                Claim <strong>Escrow + Seller Tax Credit</strong>, and always <strong>Call the Title Office directly</strong> to verify wire instructions!
               </div>
             </div>
             <button
               onClick={() => setShowGlossaryModal(false)}
               className="mt-5 w-full arcade-btn bg-emerald-400 py-3 font-display font-bold text-base rounded-xl"
             >
-              RESUME DRIVING!
+              BACK TO THE ROAD!
             </button>
           </div>
         </div>
@@ -241,9 +199,7 @@ export default function App() {
         {game.stage === 'playing' && (
           <div className="space-y-4">
             {/* Walkie-Talkie CB Radio Banner */}
-            <div className={`arcade-card rounded-2xl p-4 flex items-center gap-4 transition ${
-              telemetry.inTrafficJam ? 'bg-rose-300 animate-bounce' : 'bg-amber-200'
-            }`}>
+            <div className="arcade-card rounded-2xl p-4 flex items-center gap-4 bg-amber-200">
               <div className="p-3 rounded-2xl bg-zinc-900 text-amber-300 shrink-0">
                 <Radio size={24} />
               </div>
@@ -266,8 +222,6 @@ export default function App() {
               truckColor={game.profile?.truckColor || 0xf43f5e}
               onTelemetryUpdate={setTelemetry}
               onObstacleHit={handleObstacleHit}
-              onTrafficTick={handleTrafficTick}
-              onTrafficCleared={handleTrafficCleared}
               onEscrowCheckpoint={handleEscrowCheckpoint}
               onFinishLine={handleFinishLine}
               sceneControlRef={sceneControlRef}
@@ -278,16 +232,16 @@ export default function App() {
               {/* Cash Fuel & Escrow Gauges */}
               <div className="lg:col-span-5 grid grid-cols-2 gap-3">
                 <div className={`p-3.5 rounded-2xl border-3 border-zinc-900 shadow-[3px_3px_0px_#18181B] ${
-                  game.cashReserves < 2500 ? 'bg-rose-200' : 'bg-emerald-200'
+                  game.cashReserves < 6000 ? 'bg-amber-200' : 'bg-emerald-200'
                 }`}>
                   <div className="text-[11px] font-black uppercase text-zinc-800 flex items-center gap-1">
-                    <DollarSign size={14} /> Cash-to-Close Fuel
+                    <DollarSign size={14} /> Cash-to-Close Tank
                   </div>
                   <div className="font-display text-2xl sm:text-3xl font-bold text-zinc-900 mt-0.5">
                     ${game.cashReserves.toLocaleString()}
                   </div>
                   <div className="text-[10px] font-bold text-zinc-700 mt-1">
-                    Down Pmt Locked: ${(game.profile?.downPayment || 30000).toLocaleString()}
+                    Target for Grade A: $11,000+
                   </div>
                 </div>
 
@@ -296,7 +250,7 @@ export default function App() {
                     <ShieldAlert size={14} /> Escrow Trailer
                   </div>
                   <div className="font-display text-2xl sm:text-3xl font-bold text-zinc-900 mt-0.5">
-                    ${game.escrowFunded.toLocaleString()}
+                    {game.escrowFunded > 0 ? 'FUNDED!' : 'MILE 3.9'}
                   </div>
                   <div className="w-full bg-white border-2 border-zinc-900 h-3 rounded-full mt-2 overflow-hidden">
                     <div
@@ -307,7 +261,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Speedometer & Engine Ignition Switch */}
+              {/* Speedometer & Turbo Switch */}
               <div className="lg:col-span-3 flex items-center justify-around bg-amber-100 border-3 border-zinc-900 rounded-2xl p-3 shadow-[3px_3px_0px_#18181B]">
                 <div className="text-center">
                   <div className="text-[10px] font-black uppercase text-zinc-700 flex items-center gap-1 justify-center">
@@ -322,13 +276,13 @@ export default function App() {
                 </div>
 
                 <button
-                  onClick={() => sceneControlRef.current?.toggleEngine()}
+                  onClick={() => sceneControlRef.current?.toggleTurbo()}
                   className={`arcade-btn px-4 py-3 rounded-2xl font-display font-bold text-xs flex flex-col items-center gap-1 ${
-                    telemetry.engineRunning ? 'bg-emerald-400 text-zinc-900' : 'bg-sky-400 text-zinc-900'
+                    telemetry.turboActive ? 'bg-amber-400 text-zinc-900' : 'bg-white text-zinc-900'
                   }`}
                 >
-                  <Power size={18} />
-                  <span>{telemetry.engineRunning ? 'ENGINE ON' : 'ENGINE CUT'}</span>
+                  <Zap size={18} />
+                  <span>{telemetry.turboActive ? 'TURBO ON' : 'TURBO'}</span>
                   <span className="text-[9px] font-sans font-black">[SPACE]</span>
                 </button>
               </div>
@@ -368,7 +322,7 @@ export default function App() {
                     className="arcade-btn px-4 py-2.5 bg-rose-400 hover:bg-rose-300 text-white rounded-xl text-xs font-black flex flex-col items-center"
                   >
                     <ArrowDown size={18} />
-                    <span>BRAKE [S]</span>
+                    <span>SLOW [S]</span>
                   </button>
 
                   <button
@@ -406,31 +360,31 @@ export default function App() {
             </div>
 
             <div className={`p-5 rounded-2xl border-4 border-zinc-900 shadow-[5px_5px_0px_#18181B] mb-6 ${
-              game.cashReserves >= 3500
+              game.cashReserves >= 11000
                 ? 'bg-emerald-300'
-                : game.cashReserves >= 0
+                : game.cashReserves >= 6500
                 ? 'bg-amber-200'
                 : 'bg-rose-300'
             }`}>
               <div className="text-xs font-black uppercase text-zinc-900 mb-1">Final Homebuyer Grade</div>
               <div className="font-display text-2xl sm:text-3xl font-bold text-zinc-900 mb-1">
-                {game.cashReserves >= 3500 && '🏆 GRADE A: MASTER HOMEBUYER (KEYS UNLOCKED!)'}
-                {game.cashReserves >= 0 && game.cashReserves < 3500 && '⚠️ GRADE C: GOT THE KEYS, BUT "HOUSE POOR"!'}
-                {game.cashReserves < 0 && '❌ GRADE F: CASH-TO-CLOSE SHORTFALL!'}
+                {game.cashReserves >= 11000 && '🏆 GRADE A: MASTER HOMEBUYER (KEYS UNLOCKED!)'}
+                {game.cashReserves >= 6500 && game.cashReserves < 11000 && '👍 GRADE B: CLOSED THE DEAL, TIGHT RESERVES!'}
+                {game.cashReserves < 6500 && '⚠️ GRADE C: HOUSE POOR — REVIEW THE FIELD MANUAL!'}
               </div>
               <p className="text-xs sm:text-sm font-bold text-zinc-900">
-                {game.cashReserves >= 3500 &&
-                  `Awesome driving! You funded your $4,200 Escrow Trailer and still kept $${game.cashReserves.toLocaleString()} in emergency post-closing savings!`}
-                {game.cashReserves >= 0 && game.cashReserves < 3500 &&
-                  `You closed on the house, but with only $${game.cashReserves.toLocaleString()} left in the bank, a single leaky pipe could force you into credit card debt!`}
-                {game.cashReserves < 0 &&
-                  `You arrived $${Math.abs(game.cashReserves).toLocaleString()} short of the required Cash to Close. Check the Field Manual and try negotiating Seller Credits and cutting your engine in delays!`}
+                {game.cashReserves >= 11000 &&
+                  `Awesome driving! You navigated all 6 closing checkpoints, funded your Escrow Trailer, and finished with $${game.cashReserves.toLocaleString()} in cash reserves!`}
+                {game.cashReserves >= 6500 && game.cashReserves < 11000 &&
+                  `You got the keys with $${game.cashReserves.toLocaleString()} left! Try steering into Seller Credits, Rate Locks, and Comps Appeals to boost your score to Grade A!`}
+                {game.cashReserves < 6500 &&
+                  `You finished with $${game.cashReserves.toLocaleString()}. Check the Field Manual to see how Seller Credits, Auditing Loan Estimates, and Comps Appeals protect your cash!`}
               </p>
             </div>
 
             <div className="bg-amber-50 rounded-2xl p-5 border-3 border-zinc-900 mb-6 space-y-3 max-h-72 overflow-y-auto">
               <div className="text-xs font-black uppercase text-zinc-600 mb-2">
-                Itemized Closing Receipt & Real-World Lessons
+                Checkpoint-by-Checkpoint Closing Ledger
               </div>
               {game.history.map((h, i) => (
                 <div key={i} className="bg-white border-2 border-zinc-900 rounded-xl p-3">
@@ -444,8 +398,8 @@ export default function App() {
                 </div>
               ))}
               <div className="border-t-3 border-zinc-900 pt-3 flex justify-between font-display text-xl font-bold text-zinc-900">
-                <span>Remaining Post-Closing Cash Reserve:</span>
-                <span className={game.cashReserves >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                <span>Final Cash Reserve Balance:</span>
+                <span className="text-emerald-600">
                   ${game.cashReserves.toLocaleString()}
                 </span>
               </div>
