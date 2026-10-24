@@ -6,17 +6,17 @@
 
 @layer base {
   html {
-    font-size: 15px; /* Clean, balanced size that fits everything on one screen */
+    font-size: 16px; /* Sweet-spot readability that fits on 1 screen */
   }
 
   body {
     background-color: #FEF9EF;
     background-image: radial-gradient(#FDE68A 1.5px, transparent 1.5px);
-    background-size: 22px 22px;
+    background-size: 24px 24px;
     color: #18181B;
     font-family: 'Space Grotesk', system-ui, sans-serif;
     margin: 0;
-    line-height: 1.45;
+    line-height: 1.5;
   }
 
   h1, h2, h3, .font-display {
@@ -27,7 +27,7 @@
 .arcade-card {
   background: #FFFFFF;
   border: 3px solid #18181B;
-  box-shadow: 4px 4px 0px #18181B;
+  box-shadow: 5px 5px 0px #18181B;
 }
 
 .arcade-btn {

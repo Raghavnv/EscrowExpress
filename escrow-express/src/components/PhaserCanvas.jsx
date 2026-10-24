@@ -9,7 +9,7 @@ class EscrowFOVScene extends Phaser.Scene {
     this.distance = 0;
     this.targetDistance = 5000;
     this.campaignMode = 'express';
-    this.vehicleType = 'rig'; // 'pickup' | 'van' | 'rig'
+    this.vehicleType = 'rig';
     this.cashReserves = 12000;
     this.playerX = 0;
     this.targetLaneX = null;
@@ -21,6 +21,7 @@ class EscrowFOVScene extends Phaser.Scene {
     this.obstacles = [];
     this.roadPickups = [];
     this.scenery = [];
+    this.flyingBills = [];
   }
 
   create() {
@@ -49,24 +50,35 @@ class EscrowFOVScene extends Phaser.Scene {
 
     this.worldGfx = this.add.graphics();
 
+    // Clear, Readable 3D Sign Labels
     this.labelPool = [];
     for (let i = 0; i < 18; i++) {
       const lbl = this.add.text(0, 0, '', {
         fontFamily: 'Space Grotesk, sans-serif',
-        fontSize: '13px',
+        fontSize: '14px',
         fontStyle: 'bold',
         color: '#18181b',
         backgroundColor: '#fef08a',
         stroke: '#18181b',
-        strokeThickness: 0.5,
-        padding: { x: 7, y: 4 }
+        strokeThickness: 0.6,
+        padding: { x: 8, y: 4 }
       }).setOrigin(0.5, 1).setVisible(false).setDepth(20);
       this.labelPool.push(lbl);
     }
 
+    // Live Tailgate Cash Counter Tag attached to the vehicle
+    this.tailgateText = this.add.text(width / 2, 315, '💵 12 BUNDLES ($12K)', {
+      fontFamily: 'Space Grotesk, sans-serif',
+      fontSize: '11px',
+      fontStyle: 'bold',
+      color: '#fef08a',
+      backgroundColor: '#18181be6',
+      padding: { x: 6, y: 2 }
+    }).setOrigin(0.5).setDepth(30);
+
     this.floatingPopup = this.add.text(width / 2, 185, '', {
       fontFamily: 'Fredoka, sans-serif',
-      fontSize: '20px',
+      fontSize: '21px',
       fontStyle: 'bold',
       color: '#ffffff',
       stroke: '#18181b',
@@ -101,6 +113,22 @@ class EscrowFOVScene extends Phaser.Scene {
     }
   }
 
+  // Spawns flying dollar bills out of the truck bed when money changes!
+  spawnFlyingBills(count, isGain) {
+    const { width, height } = this.scale;
+    const truckX = width / 2 + this.playerX * 210;
+    for (let i = 0; i < count; i++) {
+      this.flyingBills.push({
+        x: truckX + Phaser.Math.Between(-30, 30),
+        y: height - 65,
+        vx: Phaser.Math.Between(-65, 65),
+        vy: isGain ? Phaser.Math.Between(-90, -50) : Phaser.Math.Between(-130, -70),
+        color: isGain ? 0x4ade80 : 0xf43f5e,
+        alpha: 1
+      });
+    }
+  }
+
   setupBetweenCheckpointAction() {
     const gapZones = [
       { z: 380, lane: 0, kind: 'coin', label: '💰 SAVINGS +$300' },
@@ -121,7 +149,7 @@ class EscrowFOVScene extends Phaser.Scene {
       hit: false,
       cost: g.kind === 'coin' ? 300 : -600,
       reason: g.kind === 'coin'
-        ? 'Added +$300 to your liquid Cash-to-Close reserve!'
+        ? 'Added +$300 to your truck bed cash stack!'
         : 'Avoid opening new credit cards or financing cars/furniture before closing—it spikes your DTI ratio!'
     }));
   }
@@ -133,7 +161,7 @@ class EscrowFOVScene extends Phaser.Scene {
         signText: '📋 WAIVE INSPECTION',
         outcomeTitle: 'Waived Inspection: Hidden Pipe Burst! (-$2,000)',
         cost: -2000,
-        lesson: 'Waiving the inspection hid a cracked water main that cost $2,000 to fix!'
+        lesson: 'Waiving the inspection hid a cracked water main that cost 2 cash bundles ($2,000) to fix!'
       },
       {
         z: 750, lane: 0, type: 'choice', checkpointTitle: 'CHECKPOINT 1/6: HOME INSPECTION DEFECTS',
@@ -498,7 +526,11 @@ class EscrowFOVScene extends Phaser.Scene {
   }
 
   updateCashLevel(newCash) {
-    this.cashReserves = newCash;
+    if (newCash !== this.cashReserves) {
+      const diff = newCash - this.cashReserves;
+      this.spawnFlyingBills(Math.min(6, Math.max(2, Math.round(Math.abs(diff) / 400))), diff > 0);
+      this.cashReserves = newCash;
+    }
   }
 
   getUpcomingCheckpoint() {
@@ -552,6 +584,15 @@ class EscrowFOVScene extends Phaser.Scene {
       c.x += (8 + idx * 4) * dt;
       if (c.x > this.scale.width + 70) c.x = -70;
     });
+
+    // Update flying cash bill particles
+    this.flyingBills.forEach(b => {
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.vy += 220 * dt;
+      b.alpha -= 1.1 * dt;
+    });
+    this.flyingBills = this.flyingBills.filter(b => b.alpha > 0);
 
     const up = this.cursors.up.isDown || this.keys.W.isDown || vInput.up;
     const down = this.cursors.down.isDown || this.keys.S.isDown || vInput.down;
@@ -707,7 +748,7 @@ class EscrowFOVScene extends Phaser.Scene {
           lbl.setText(item.label);
           lbl.setBackgroundColor(item.kind === 'coin' ? '#fef08a' : '#fecdd3');
           lbl.setPosition(proj.screenX, proj.screenY - r * 2.2);
-          lbl.setScale(Math.max(0.75, Math.min(1.0, proj.scale * 1.25)));
+          lbl.setScale(Math.max(0.8, Math.min(1.05, proj.scale * 1.3)));
           lbl.setVisible(true);
         }
 
@@ -754,7 +795,7 @@ class EscrowFOVScene extends Phaser.Scene {
           const lbl = this.labelPool[labelIdx++];
           lbl.setText(obs.signText);
           lbl.setPosition(width / 2, proj.screenY - archHeight - 4);
-          lbl.setScale(Math.max(0.8, Math.min(1.1, proj.scale * 1.3)));
+          lbl.setScale(Math.max(0.85, Math.min(1.15, proj.scale * 1.35)));
           lbl.setVisible(true);
         }
       } else {
@@ -771,7 +812,7 @@ class EscrowFOVScene extends Phaser.Scene {
           lbl.setText(obs.signText);
           lbl.setBackgroundColor(isAligned ? '#facc15' : '#ffffff');
           lbl.setPosition(proj.screenX, proj.screenY - h * 1.48);
-          lbl.setScale(Math.max(0.78, Math.min(1.05, proj.scale * 1.3)));
+          lbl.setScale(Math.max(0.84, Math.min(1.12, proj.scale * 1.35)));
           lbl.setVisible(true);
         }
       }
@@ -820,88 +861,97 @@ class EscrowFOVScene extends Phaser.Scene {
     this.drawPlayerVehicle(gfx, steerDir);
   }
 
-  // Draws 3 distinct vehicle bodies ('pickup', 'van', 'rig') + dynamic wealth upgrades based on cashReserves!
+  // Draws stacked 3D green cash bundles ($1,000 per brick) inside the vehicle's open cargo bed!
+  drawCashBundlesInBed(gfx, centerX, bedBottomY, tilt) {
+    const bundleCount = Phaser.Math.Clamp(Math.round(Math.max(0, this.cashReserves) / 1000), 0, 18);
+    const cols = 3;
+    const brickW = 22;
+    const brickH = 8;
+    const gapX = 25;
+
+    for (let i = 0; i < bundleCount; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const bx = centerX + (col - 1) * gapX - brickW / 2 + tilt;
+      const by = bedBottomY - (row + 1) * (brickH + 1);
+
+      // Bundles above 12 ($12k+) glow as Gold Bullion Bars; regular bundles are Crisp Emerald Dollar Stacks!
+      const isGoldBar = i >= 12;
+      gfx.fillStyle(isGoldBar ? 0xfacc15 : 0x16a34a, 1);
+      gfx.lineStyle(1.5, 0x18181b, 1);
+      gfx.fillRoundedRect(bx, by, brickW, brickH, 2);
+      gfx.strokeRoundedRect(bx, by, brickW, brickH, 2);
+
+      // White paper currency strap around the center of each cash bundle
+      gfx.fillStyle(isGoldBar ? 0xfef08a : 0xffffff, 0.9);
+      gfx.fillRect(bx + brickW / 2 - 2.5, by + 1, 5, brickH - 2);
+    }
+  }
+
   drawPlayerVehicle(gfx, steerDir) {
     const { width, height } = this.scale;
     const x = width / 2 + this.playerX * 210;
-    const y = height - 22; // Smooth, stable Y position (zero screen shaking!)
+    const y = height - 24;
     const tilt = steerDir * 3.5;
 
     const isRich = this.cashReserves >= 13500;
     const isLowCash = this.cashReserves < 8500;
     const borderCol = isRich ? 0xfacc15 : 0x18181b;
 
-    // Ground Shadow
+    // Shadow
     gfx.fillStyle(0x000000, 0.32);
-    gfx.fillEllipse(x, height - 12, 130, 20);
+    gfx.fillEllipse(x, height - 14, 134, 20);
 
     if (this.vehicleType === 'pickup') {
-      // 1. 0%-DOWN COMPACT MINI-PICKUP (Open Bed Showing Cash Bundles!)
+      // 1. 0%-DOWN MINI-PICKUP WITH OPEN CASH BED
       gfx.fillStyle(0x18181b, 1);
-      gfx.fillRoundedRect(x - 48, y - 18, 20, 22, 5);
-      gfx.fillRoundedRect(x + 28, y - 18, 20, 22, 5);
+      gfx.fillRoundedRect(x - 50, y - 18, 22, 22, 5);
+      gfx.fillRoundedRect(x + 28, y - 18, 22, 22, 5);
 
-      // Pickup Cab (Upper)
+      // Cab Frame
       gfx.fillStyle(this.truckColor, 1);
       gfx.lineStyle(3, borderCol, 1);
-      gfx.fillRoundedRect(x - 36 + tilt, y - 70, 72, 34, 8);
-      gfx.strokeRoundedRect(x - 36 + tilt, y - 70, 72, 34, 8);
+      gfx.fillRoundedRect(x - 40 + tilt, y - 80, 80, 38, 8);
+      gfx.strokeRoundedRect(x - 40 + tilt, y - 80, 80, 38, 8);
 
-      // Rear Cab Window
-      gfx.fillStyle(isLowCash ? 0x475569 : 0x38bdf8, 1);
-      gfx.fillRoundedRect(x - 26 + tilt, y - 64, 52, 18, 4);
+      // Dark Open Cargo Bed Pit
+      gfx.fillStyle(0x0f172a, 1);
+      gfx.fillRoundedRect(x - 44 + tilt, y - 54, 88, 34, 5);
 
-      // Open Pickup Bed (Lower)
+      // Draw Live Stacked Cash Bundles inside Pickup Bed!
+      this.drawCashBundlesInBed(gfx, x, y - 22, tilt);
+
+      // Lower Tailgate Side Rails
       gfx.fillStyle(this.truckColor, 1);
-      gfx.fillRoundedRect(x - 46 + tilt, y - 42, 92, 28, 6);
-      gfx.strokeRoundedRect(x - 46 + tilt, y - 42, 92, 28, 6);
-
-      // Visible Cash Stacks in the Open Bed (Scales with how much money you have!)
-      if (!isLowCash) {
-        gfx.fillStyle(0x22c55e, 1);
-        gfx.fillRect(x - 32 + tilt, y - 50, 24, 10);
-        gfx.strokeRect(x - 32 + tilt, y - 50, 24, 10);
-        gfx.fillRect(x + 6 + tilt, y - 50, 24, 10);
-        gfx.strokeRect(x + 6 + tilt, y - 50, 24, 10);
-      }
-      if (isRich) {
-        // Extra Gold Bullion Stack in Bed when Rich!
-        gfx.fillStyle(0xfacc15, 1);
-        gfx.fillRect(x - 14 + tilt, y - 58, 28, 12);
-        gfx.strokeRect(x - 14 + tilt, y - 58, 28, 12);
-      }
+      gfx.lineStyle(3, borderCol, 1);
+      gfx.fillRoundedRect(x - 48 + tilt, y - 30, 96, 14, 4);
+      gfx.strokeRoundedRect(x - 48 + tilt, y - 30, 96, 14, 4);
     } else if (this.vehicleType === 'van') {
-      // 2. FHA 3.5%-DOWN SPRINTER CARGO VAN (Tall Rounded Van with Twin Doors)
+      // 2. FHA 3.5%-DOWN SPRINTER VAN WITH GLASS CASH VAULT DOORS
       gfx.fillStyle(0x18181b, 1);
-      gfx.fillRoundedRect(x - 50, y - 18, 22, 24, 5);
-      gfx.fillRoundedRect(x + 28, y - 18, 22, 24, 5);
+      gfx.fillRoundedRect(x - 52, y - 18, 22, 24, 5);
+      gfx.fillRoundedRect(x + 30, y - 18, 22, 24, 5);
 
       gfx.fillStyle(this.truckColor, 1);
       gfx.lineStyle(3.5, borderCol, 1);
-      gfx.fillRoundedRect(x - 46 + tilt, y - 82, 92, 66, 16);
-      gfx.strokeRoundedRect(x - 46 + tilt, y - 82, 92, 66, 16);
+      gfx.fillRoundedRect(x - 48 + tilt, y - 86, 96, 70, 14);
+      gfx.strokeRoundedRect(x - 48 + tilt, y - 86, 96, 70, 14);
 
-      // Center Rear Door Seam
-      gfx.lineBetween(x + tilt, y - 80, x + tilt, y - 18);
+      // Transparent Rear Cargo Vault Window
+      gfx.fillStyle(0x0f172a, 0.95);
+      gfx.fillRoundedRect(x - 40 + tilt, y - 74, 80, 48, 6);
+      gfx.lineStyle(2, 0x38bdf8, 0.8);
+      gfx.strokeRoundedRect(x - 40 + tilt, y - 74, 80, 48, 6);
 
-      // Twin Rear Van Windows
-      gfx.fillStyle(this.escrowCollected ? 0x38bdf8 : 0x1e293b, 1);
-      gfx.fillRoundedRect(x - 36 + tilt, y - 68, 30, 22, 5);
-      gfx.fillRoundedRect(x + 6 + tilt, y - 68, 30, 22, 5);
-
-      // Roof Luggage Rack when Rich
-      if (isRich) {
-        gfx.fillStyle(0xfacc15, 1);
-        gfx.fillRoundedRect(x - 28 + tilt, y - 92, 56, 10, 4);
-        gfx.strokeRoundedRect(x - 28 + tilt, y - 92, 56, 10, 4);
-      }
+      // Draw Live Stacked Cash Bundles inside Van Vault!
+      this.drawCashBundlesInBed(gfx, x, y - 26, tilt);
     } else {
-      // 3. CONVENTIONAL 20%-DOWN HEAVY BOX RIG (Wide Commercial Hauler with Chrome Stacks)
+      // 3. CONVENTIONAL 20%-DOWN HEAVY RIG WITH OPEN ROLL-UP CARGO BAY
       gfx.fillStyle(0x18181b, 1);
       gfx.fillRoundedRect(x - 62, y - 20, 26, 26, 5);
       gfx.fillRoundedRect(x + 36, y - 20, 26, 26, 5);
 
-      // Dual Vertical Chrome Exhaust Stacks
+      // Chrome Stacks
       gfx.fillStyle(isRich ? 0xfacc15 : 0xcbd5e1, 1);
       gfx.lineStyle(2.5, 0x18181b, 1);
       gfx.fillRect(x - 62 + tilt, y - 92, 8, 45);
@@ -909,47 +959,35 @@ class EscrowFOVScene extends Phaser.Scene {
       gfx.fillRect(x + 54 + tilt, y - 92, 8, 45);
       gfx.strokeRect(x + 54 + tilt, y - 92, 8, 45);
 
-      // Wide Armored Cargo Box
+      // Outer Box Body
       gfx.fillStyle(this.truckColor, 1);
       gfx.lineStyle(4, borderCol, 1);
-      gfx.fillRoundedRect(x - 56 + tilt, y - 86, 112, 70, 8);
-      gfx.strokeRoundedRect(x - 56 + tilt, y - 86, 112, 70, 8);
+      gfx.fillRoundedRect(x - 56 + tilt, y - 88, 112, 72, 8);
+      gfx.strokeRoundedRect(x - 56 + tilt, y - 88, 112, 72, 8);
 
-      // White Roof Cap
-      gfx.fillStyle(isRich ? 0xfef08a : 0xffffff, 0.95);
-      gfx.fillRoundedRect(x - 52 + tilt, y - 84, 104, 12, 3);
+      // Open Rear Cargo Bay Showing Cash Stacks
+      gfx.fillStyle(0x0f172a, 0.95);
+      gfx.fillRoundedRect(x - 44 + tilt, y - 76, 88, 50, 5);
 
-      // Escrow Tank Window
-      gfx.fillStyle(0x18181b, 1);
-      gfx.fillRoundedRect(x - 38 + tilt, y - 62, 76, 26, 5);
-      if (this.escrowCollected) {
-        gfx.fillStyle(0x38bdf8, 1);
-        gfx.fillRoundedRect(x - 34 + tilt, y - 58, 68, 18, 3);
-      }
-
-      // Gold Crown Cargo Box on Roof when Rich!
-      if (isRich) {
-        gfx.fillStyle(0xfacc15, 1);
-        gfx.fillRoundedRect(x - 26 + tilt, y - 98, 52, 12, 4);
-        gfx.strokeRoundedRect(x - 26 + tilt, y - 98, 52, 12, 4);
-      }
+      // Draw Live Stacked Cash Bundles inside Rig Cargo Bay!
+      this.drawCashBundlesInBed(gfx, x, y - 26, tilt);
     }
 
-    // Visual "Duct Tape X" if Player's Cash Drops Low (<$8,500)
-    if (isLowCash) {
-      gfx.lineStyle(3, 0x94a3b8, 1);
-      gfx.lineBetween(x - 20 + tilt, y - 62, x + 20 + tilt, y - 42);
-      gfx.lineBetween(x + 20 + tilt, y - 62, x - 20 + tilt, y - 42);
-    }
+    // Render Flying Dollar Bill Particles on Gain/Loss
+    this.flyingBills.forEach(b => {
+      gfx.fillStyle(b.color, Math.max(0, b.alpha));
+      gfx.lineStyle(1.5, 0x18181b, Math.max(0, b.alpha));
+      gfx.fillRect(b.x - 9, b.y - 5, 18, 10);
+      gfx.strokeRect(b.x - 9, b.y - 5, 18, 10);
+    });
 
-    // Brake Lights & Wealth License Plate
-    const braking = this.cursors?.down?.isDown || this.keys?.S?.isDown;
-    gfx.fillStyle(braking ? 0xff0000 : 0xfbbf24, 1);
-    gfx.lineStyle(2, 0x18181b, 1);
-    gfx.fillRect(x - 42 + tilt, y - 24, 16, 7);
-    gfx.strokeRect(x - 42 + tilt, y - 24, 16, 7);
-    gfx.fillRect(x + 26 + tilt, y - 24, 16, 7);
-    gfx.strokeRect(x + 26 + tilt, y - 24, 16, 7);
+    // Update Live Tailgate Bundle Label Position & Text
+    if (this.tailgateText) {
+      const bundles = Math.max(0, Math.round(this.cashReserves / 1000));
+      this.tailgateText.setPosition(x + tilt, height - 10);
+      this.tailgateText.setText(`💵 ${bundles} CASH BUNDLES ($${(this.cashReserves / 1000).toFixed(1)}K)`);
+      this.tailgateText.setColor(isRich ? '#facc15' : isLowCash ? '#fb7185' : '#4ade80');
+    }
   }
 }
 
@@ -993,7 +1031,7 @@ export default function PhaserCanvas({
       type: Phaser.AUTO,
       parent: containerRef.current,
       width: 800,
-      height: 330,
+      height: 335,
       backgroundColor: '#38bdf8',
       scale: {
         mode: Phaser.Scale.FIT,
@@ -1020,7 +1058,6 @@ export default function PhaserCanvas({
     };
   }, [campaignMode, truckColor, vehicleType]);
 
-  // Dynamically update vehicle wealth appearance whenever cashReserves changes!
   useEffect(() => {
     if (sceneInstanceRef.current) {
       sceneInstanceRef.current.updateCashLevel(cashReserves);
@@ -1031,13 +1068,13 @@ export default function PhaserCanvas({
 
   return (
     <div className="arcade-card rounded-2xl overflow-hidden bg-sky-300 p-1.5 relative">
-      {/* Pinned Overlay Signboard (Fixed position inside top of canvas = ZERO layout jumping!) */}
+      {/* Pinned Top Signboard Overlay with Slightly Larger, Clearer Text */}
       <div className="absolute top-2.5 left-2.5 right-2.5 z-20 pointer-events-auto">
         {upcomingFork ? (
-          <div className="bg-zinc-900/95 border-2 border-zinc-900 text-white rounded-xl p-2 shadow-lg">
-            <div className="flex items-center justify-between text-[11px] font-black uppercase text-amber-300 mb-1.5 px-1">
+          <div className="bg-zinc-900/95 border-2 border-zinc-900 text-white rounded-xl p-2.5 shadow-lg">
+            <div className="flex items-center justify-between text-xs font-black uppercase text-amber-300 mb-1.5 px-1">
               <span className="truncate">🛣️ {upcomingFork.title}</span>
-              <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[10px] shrink-0">
+              <span className="bg-rose-500 text-white px-2.5 py-0.5 rounded-full text-xs shrink-0">
                 {upcomingFork.distanceAway}m — STEER OR CLICK!
               </span>
             </div>
@@ -1049,17 +1086,17 @@ export default function PhaserCanvas({
                     key={idx}
                     type="button"
                     onClick={() => sceneControlRef?.current?.steerToLane(opt.lane)}
-                    className={`px-2.5 py-1.5 rounded-lg border-2 text-left transition ${
+                    className={`px-3 py-2 rounded-lg border-2 text-left transition ${
                       isTargeted
                         ? 'bg-amber-300 text-zinc-900 border-white font-black'
                         : 'bg-zinc-800 text-zinc-200 border-zinc-600 hover:bg-zinc-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase">
+                    <div className="flex items-center justify-between text-[11px] font-black uppercase">
                       <span>{laneLabels[idx]}</span>
-                      {isTargeted && <span className="bg-zinc-900 text-amber-300 px-1 rounded">✓</span>}
+                      {isTargeted && <span className="bg-zinc-900 text-amber-300 px-1.5 rounded">✓</span>}
                     </div>
-                    <div className="font-display text-xs sm:text-sm font-bold truncate mt-0.5">
+                    <div className="font-display text-sm sm:text-base font-bold truncate mt-0.5">
                       {opt.text}
                     </div>
                   </button>
@@ -1068,15 +1105,14 @@ export default function PhaserCanvas({
             </div>
           </div>
         ) : (
-          <div className="bg-zinc-900/80 backdrop-blur-sm text-white border border-white/20 rounded-xl px-3.5 py-1.5 flex items-center justify-between text-xs font-bold">
-            <span>💰 COLLECT GOLD COINS (+$300) & DODGE RED DEBT TRAPS (-$600)</span>
+          <div className="bg-zinc-900/85 backdrop-blur-sm text-white border border-white/20 rounded-xl px-4 py-2 flex items-center justify-between text-xs sm:text-sm font-bold">
+            <span>💰 COLLECT GOLD COINS (+$300) & WATCH YOUR TRUCK BED CASH STACK GROW!</span>
             <span className="text-amber-300 font-black">HOLD [W / ▲] OR [GAS]</span>
           </div>
         )}
       </div>
 
-      {/* 3D Phaser Canvas */}
-      <div ref={containerRef} className="w-full h-[250px] sm:h-[310px] rounded-xl overflow-hidden border-2 border-zinc-900" />
+      <div ref={containerRef} className="w-full h-[260px] sm:h-[315px] rounded-xl overflow-hidden border-2 border-zinc-900" />
     </div>
   );
 }
